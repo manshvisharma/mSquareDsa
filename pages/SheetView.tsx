@@ -229,7 +229,9 @@ export default function SheetView() {
       const currentTopic = topics.find(t => t.id === activeTopicId);
       if(!currentTopic) return;
 
-      const unsolved = [];
+      // FIX: Added type definition to avoid TS7034 implicit any error
+      const unsolved: { pid: string, spid: string }[] = [];
+      
       currentTopic.subPatterns.forEach(sp => {
           sp.problems.forEach(p => {
               if(!p.solved) unsolved.push({ pid: p.id, spid: sp.id });
