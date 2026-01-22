@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MSquare - Master Coding</title>
+    <!-- Keeping Tailwind CDN for simplicity, though the warning will persist in console. It works fine for this setup. -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
@@ -14,7 +15,6 @@
               sans: ['Inter', 'system-ui', 'sans-serif'],
             },
             fontSize: {
-              // Scaling up base sizes slightly
               'sm': '0.925rem',
               'base': '1.05rem',
               'lg': '1.175rem',
@@ -22,33 +22,29 @@
               '2xl': '1.6rem',
             },
             colors: {
-              // Sharper Primary - Lighter in dark mode for visibility
               primary: {
-                DEFAULT: '#4f46e5', // Indigo 600
+                DEFAULT: '#4f46e5',
                 50: '#eef2ff',
                 100: '#e0e7ff',
                 500: '#6366f1',
                 600: '#4f46e5',
                 700: '#4338ca',
                 900: '#312e81',
-                // Specialized for dark mode text
                 300: '#a5b4fc', 
               },
-              // Vibrant Success
               success: {
-                DEFAULT: '#059669', // Emerald 600
+                DEFAULT: '#059669',
                 50: '#ecfdf5',
                 100: '#d1fae5',
                 500: '#10b981',
                 600: '#059669',
                 900: '#064e3b',
               },
-              // Deep Dark Theme (Less Blue, More Slate/Black)
               dark: {
-                bg: '#0f172a', // Slate 900
-                card: '#1e293b', // Slate 800
-                border: '#334155', // Slate 700
-                surface: '#020617', // Slate 950
+                bg: '#0f172a',
+                card: '#1e293b',
+                border: '#334155',
+                surface: '#020617',
               }
             }
           }
@@ -58,41 +54,30 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
       body { font-family: 'Inter', sans-serif; }
-      /* Custom Scrollbar for Sidebar */
-      .custom-scrollbar::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
-      }
-      .custom-scrollbar::-webkit-scrollbar-track {
-        background: transparent;
-      }
-      .custom-scrollbar::-webkit-scrollbar-thumb {
-        background-color: #cbd5e1;
-        border-radius: 20px;
-        border: 2px solid transparent;
-        background-clip: content-box;
-      }
-      .dark .custom-scrollbar::-webkit-scrollbar-thumb {
-        background-color: #475569;
-      }
+      .custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
+      .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+      .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 20px; border: 2px solid transparent; background-clip: content-box; }
+      .dark .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #475569; }
     </style>
   <script type="importmap">
 {
   "imports": {
-    "firebase/": "https://esm.sh/firebase@^12.8.0/",
-    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+    "canvas-confetti": "https://esm.sh/canvas-confetti@^1.9.4",
+    "react-router-dom": "https://esm.sh/react-router-dom@^7.12.0",
     "react/": "https://esm.sh/react@^19.2.3/",
     "react": "https://esm.sh/react@^19.2.3",
-    "react-dom/client": "https://esm.sh/react-dom@^19.2.3/client",
-    "react-dom": "https://esm.sh/react-dom@^19.2.3",
-    "react-router-dom": "https://esm.sh/react-router-dom@^7.12.0",
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "canvas-confetti": "https://esm.sh/canvas-confetti@^1.9.4"
+    "firebase/": "https://esm.sh/firebase@^12.8.0/",
+    "vite": "https://esm.sh/vite@^7.3.1",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2"
   }
 }
 </script>
 </head>
-  <body class="bg-gray-100 text-slate-900 dark:bg-dark-surface dark:text-gray-100 transition-colors duration-200 antialiased selection:bg-primary-100 selection:text-primary-900 dark:selection:bg-primary-900 dark:selection:text-primary-100 text-base">
+  <body class="bg-gray-100 text-slate-900 dark:bg-dark-surface dark:text-gray-100 transition-colors duration-200 antialiased text-base">
     <div id="root"></div>
+    <!-- CRITICAL: This line tells Vite where your React app starts -->
+    <script type="module" src="/index.tsx"></script>
   </body>
 </html>
