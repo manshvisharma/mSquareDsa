@@ -12,6 +12,7 @@ import SheetView from './pages/SheetView';
 import AdminDashboard from './pages/AdminDashboard';
 import UserOversight from './pages/UserOversight';
 import Account from './pages/Account';
+import RevisionDashboard from './pages/RevisionDashboard';
 
 // --- Auth Context ---
 
@@ -184,6 +185,7 @@ export default function App() {
           {/* User Routes */}
           <Route path="/account" element={<RequireAuth><Layout><Account /></Layout></RequireAuth>} />
           <Route path="/sheet/:sheetId" element={<RequireAuth><Layout><SheetView /></Layout></RequireAuth>} />
+          <Route path="/revision" element={<RequireAuth><Layout><RevisionDashboard /></Layout></RequireAuth>} />
           <Route path="/" element={<RequireAuth><Layout><UserDashboard /></Layout></RequireAuth>} />
         </Routes>
       </Router>

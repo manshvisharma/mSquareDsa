@@ -1,7 +1,7 @@
 import React, { ReactNode, useEffect } from 'react';
 import { useAuth } from '../App';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { LogOut, Menu, X, LayoutDashboard, Database, User, Moon, Sun } from 'lucide-react';
+import { LogOut, Menu, X, LayoutDashboard, Database, User, Moon, Sun, Repeat } from 'lucide-react';
 import { auth } from '../firebase';
 
 interface LayoutProps {
@@ -29,20 +29,35 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   const isAdmin = profile?.role === 'admin';
 
-  const NavItem = ({ to, icon: Icon, label }: { to: string, icon: any, label: string }) => {
+  const pendingRevisionsCount = React.useMemo(() => {
+    if (!profile?.revisions) return 0;
+    const TODAY_MS = new Date().setHours(0, 0, 0, 0);
+    return Object.values(profile.revisions).filter(r => !r.revisionCycleCompleted && r.nextRevisionDate && r.nextRevisionDate <= TODAY_MS).length;
+  }, [profile?.revisions]);
+
+  const NavItem = ({ to, icon: Icon, label, badge }: { to: string, icon: any, label: string, badge?: number }) => {
     const isActive = location.pathname === to;
     return (
       <Link
         to={to}
         onClick={() => setSidebarOpen(false)}
-        className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
+        className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors group ${
           isActive 
           ? 'bg-primary-600 text-white shadow-md' 
           : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
         }`}
       >
-        <Icon size={20} />
-        <span className="font-medium">{label}</span>
+        <div className="flex items-center justify-between w-full">
+          <div className="flex items-center space-x-3">
+            <Icon size={20} />
+            <span className="font-medium">{label}</span>
+          </div>
+          {badge !== undefined && badge > 0 && (
+            <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${isActive ? 'bg-white text-primary-600' : 'bg-red-500 text-white group-hover:bg-red-600'}`}>
+              {badge}
+            </span>
+          )}
+        </div>
       </Link>
     );
   };
@@ -91,6 +106,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
           <div className="flex-1 overflow-y-auto py-6 px-3 space-y-2">
             <NavItem to="/" icon={LayoutDashboard} label="Dashboard" />
+            <NavItem to="/revision" icon={Repeat} label="Revision" badge={pendingRevisionsCount} />
             
             {isAdmin && (
               <>

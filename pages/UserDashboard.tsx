@@ -53,7 +53,7 @@ const ContributionGraph = ({ completedProblems }: { completedProblems: Record<st
         const daysInMonth = new Date(year, month + 1, 0).getDate();
         const startDayOffset = d.getDay(); 
         
-        const days = [];
+        const days: {id: string, invisible?: boolean, date?: string, solvedCount?: number, isToday?: boolean}[] = [];
         
         // 1. Padding for days before the 1st
         for(let k=0; k<startDayOffset; k++) {
@@ -106,19 +106,19 @@ const ContributionGraph = ({ completedProblems }: { completedProblems: Record<st
                       {month.days.map((day) => (
                           <div 
                             key={day.id}
-                            title={day.invisible ? '' : `${day.date}: ${day.solvedCount} problems solved`}
+                            title={day.invisible ? '' : `${day.date}: ${day.solvedCount || 0} problems solved`}
                             className={`
                                 w-3.5 h-3.5 rounded-[2px] transition-all duration-300 relative group
                                 ${day.invisible ? 'opacity-0 pointer-events-none' : ''}
-                                ${!day.invisible && day.solvedCount > 0
-                                    ? day.solvedCount >= 3 
+                                ${!day.invisible && (day.solvedCount || 0) > 0
+                                    ? (day.solvedCount || 0) >= 3 
                                         ? 'bg-emerald-600 shadow-[0_0_6px_rgba(5,150,105,0.4)] scale-110' 
                                         : 'bg-emerald-400'
                                     : !day.invisible 
                                         ? 'bg-gray-200 dark:bg-slate-700 hover:bg-gray-300 dark:hover:bg-slate-600' 
                                         : ''
                                 }
-                                ${day.isToday && day.solvedCount === 0 ? 'ring-2 ring-primary-500 ring-offset-1 dark:ring-offset-dark-card' : ''}
+                                ${day.isToday && (day.solvedCount || 0) === 0 ? 'ring-2 ring-primary-500 ring-offset-1 dark:ring-offset-dark-card' : ''}
                             `}
                           >
                              {/* Small dot for today */}

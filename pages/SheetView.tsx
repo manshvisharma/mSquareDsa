@@ -1,12 +1,12 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { getSheetFullStructure, toggleProblem, saveNote, getNotesForSheet } from '../services/dataService';
 import { Sheet, Topic, SubPattern, Problem } from '../types';
 import { useAuth } from '../App';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, deleteField } from 'firebase/firestore';
 import { db } from '../firebase';
 import { COLLECTIONS } from '../constants';
-import { ChevronDown, ChevronUp, CheckCircle, Circle, ExternalLink, Filter, Zap, ArrowRight, StickyNote, X, Save, Shuffle, Search } from 'lucide-react';
+import { ChevronDown, ChevronUp, CheckCircle, Circle, ExternalLink, Filter, Zap, ArrowRight, StickyNote, X, Save, Shuffle, Search, Repeat } from 'lucide-react';
 import { PlatformIcon } from '../components/PlatformIcon';
 import confetti from 'canvas-confetti';
 
@@ -37,12 +37,22 @@ export default function SheetView() {
   const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
   const [currentNoteProb, setCurrentNoteProb] = useState<{id: string, title: string, content: string} | null>(null);
   
+  const [activeRevPopup, setActiveRevPopup] = useState<{ prob: FullProblem, rev: any } | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [showDeleteAction, setShowDeleteAction] = useState(false);
+  
   const [activeTopicId, setActiveTopicId] = useState<string | null>(() => {
     return localStorage.getItem(`sheet_${sheetId}_activeTopic`) || null;
   });
   
   const [expandedSubPatterns, setExpandedSubPatterns] = useState<Set<string>>(new Set());
   const hasInitializedScroll = useRef(false);
+
+  useEffect(() => {
+    if (sheetId) {
+       localStorage.setItem('last_sheet_path', `/sheet/${sheetId}`);
+    }
+  }, [sheetId]);
 
   useEffect(() => {
     if (!sheetId || !user) return;
@@ -239,6 +249,44 @@ export default function SheetView() {
     setIsNoteModalOpen(false);
   };
 
+  const handleAddToRevision = async (prob: FullProblem, topicTitle: string) => {
+    if (!user || !sheet) return;
+
+    const now = Date.now();
+    const nextDate = now + 1 * 24 * 60 * 60 * 1000; // Day 1
+
+    const newRevision = {
+      problemId: prob.id,
+      sheetId: sheet.id,
+      sheetName: sheet.title,
+      topicName: topicTitle,
+      problemTitle: prob.title,
+      platform: prob.platform,
+      url: prob.url,
+      isInRevision: true,
+      revisionStage: 0,
+      revisionHistory: [],
+      nextRevisionDate: nextDate,
+      lastRevisionDate: null,
+      timesRevised: 0,
+      timesReset: 0,
+      missedCount: 0,
+      revisionCycleCompleted: false,
+      futureReviewScheduled: false,
+      futureReviewDate: null,
+      createdRevisionDate: now
+    };
+
+    const userRef = doc(db, COLLECTIONS.USERS, user.uid);
+    await setDoc(userRef, {
+      revisions: {
+        [prob.id]: newRevision
+      }
+    }, { merge: true });
+    
+    refreshProfile();
+  };
+
   const handleRandomPick = () => {
       const currentTopic = topics.find(t => t.id === activeTopicId);
       if(!currentTopic) return;
@@ -282,6 +330,31 @@ export default function SheetView() {
   const totalProblems = useMemo(() => topics.reduce((acc, t) => acc + t.totalProblems, 0), [topics]);
   const totalSolved = useMemo(() => topics.reduce((acc, t) => acc + t.solvedProblems, 0), [topics]);
   const globalProgress = totalProblems === 0 ? 0 : Math.round((totalSolved / totalProblems) * 100);
+
+  const revisionStats = useMemo(() => {
+    let inRev = 0, dueToday = 0, missed = 0, upcoming = 0, completed = 0;
+    const todayMidnight = new Date();
+    todayMidnight.setHours(0,0,0,0);
+    const TODAY_MS = todayMidnight.getTime();
+    
+    if (profile?.revisions) {
+      Object.values(profile.revisions).forEach(rev => {
+        if (rev.sheetId === sheetId) {
+          inRev++;
+          if (rev.revisionCycleCompleted && !rev.futureReviewScheduled) completed++;
+          else if (rev.nextRevisionDate) {
+            const nextDate = new Date(rev.nextRevisionDate);
+            nextDate.setHours(0,0,0,0);
+            if (nextDate.getTime() < TODAY_MS) missed++;
+            else if (nextDate.getTime() === TODAY_MS) dueToday++;
+            else upcoming++;
+          }
+        }
+      });
+    }
+    const progress = inRev > 0 ? Math.round((completed / inRev) * 100) : 0;
+    return { inRev, dueToday, missed, upcoming, completed, progress };
+  }, [profile?.revisions, sheetId]);
 
   if (loading) return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-dark-bg">
@@ -338,6 +411,51 @@ export default function SheetView() {
                 </div>
             </div>
         </div>
+      </div>
+
+      <div className="bg-white dark:bg-dark-card rounded-2xl shadow-sm p-5 pb-6 mb-8 border border-gray-200 dark:border-dark-border">
+          <div className="flex items-center justify-between mb-4 pb-2 border-b border-gray-100 dark:border-dark-border">
+              <h3 className="font-bold text-lg dark:text-white flex items-center">
+                  <Repeat className="mr-2 text-primary-600" size={20} />
+                  Revision Overview
+              </h3>
+              <Link to="/revision" className="text-xs font-bold bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 px-3 py-1.5 rounded-lg hover:bg-primary-100 dark:hover:bg-primary-900/50 transition-colors uppercase tracking-widest">
+                  Go to Dashboard
+              </Link>
+          </div>
+          <div className="flex flex-wrap gap-4 items-center">
+              <div className="flex-1 min-w-[200px]">
+                  <div className="flex justify-between text-xs font-bold mb-1">
+                      <span className="text-slate-600 dark:text-gray-400">Sheet Revision Progress</span>
+                      <span className="text-primary-600 dark:text-primary-400">{revisionStats.progress}%</span>
+                  </div>
+                  <div className="h-2 w-full bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+                      <div style={{ width: `${revisionStats.progress}%` }} className="h-full bg-primary-500"></div>
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-1 uppercase font-bold tracking-widest">
+                      {revisionStats.inRev} Questions In Revision
+                  </div>
+              </div>
+
+              <div className="flex gap-3">
+                  <div className="flex flex-col items-center px-4 py-2 bg-gray-50 dark:bg-dark-surface rounded-xl border border-gray-100 dark:border-dark-border min-w-[80px]">
+                      <span className="text-[10px] font-black uppercase text-gray-500 mb-1">Due</span>
+                      <span className="text-xl font-black text-slate-800 dark:text-white">{revisionStats.dueToday}</span>
+                  </div>
+                  <div className="flex flex-col items-center px-4 py-2 bg-red-50 dark:bg-red-900/10 rounded-xl border border-red-100 dark:border-red-900/30 min-w-[80px]">
+                      <span className="text-[10px] font-black uppercase text-red-500 mb-1">Missed</span>
+                      <span className="text-xl font-black text-red-600 dark:text-red-400">{revisionStats.missed}</span>
+                  </div>
+                  <div className="flex flex-col items-center px-4 py-2 bg-gray-50 dark:bg-dark-surface rounded-xl border border-gray-100 dark:border-dark-border min-w-[80px]">
+                      <span className="text-[10px] font-black uppercase text-gray-500 mb-1">Upcoming</span>
+                      <span className="text-xl font-black text-slate-800 dark:text-white">{revisionStats.upcoming}</span>
+                  </div>
+                  <div className="flex flex-col items-center px-4 py-2 bg-emerald-50 dark:bg-emerald-900/10 rounded-xl border border-emerald-100 dark:border-emerald-900/30 min-w-[80px]">
+                      <span className="text-[10px] font-black uppercase text-emerald-600 mb-1">Completed</span>
+                      <span className="text-xl font-black text-emerald-600 dark:text-emerald-400">{revisionStats.completed}</span>
+                  </div>
+              </div>
+          </div>
       </div>
 
       <div className="flex flex-col lg:flex-row-reverse gap-8 items-start relative">
@@ -495,6 +613,56 @@ export default function SheetView() {
                                                                 {prob.note ? "Note" : "Add Note"}
                                                             </button>
 
+                                                            {(() => {
+                                                              if (!profile) return null;
+                                                              const rev = profile.revisions?.[prob.id];
+                                                              if (!rev) {
+                                                                return (
+                                                                  <button
+                                                                      onClick={() => handleAddToRevision(prob, topic.title)}
+                                                                      className="flex items-center gap-2 px-2 py-0.5 rounded-md border border-purple-200 text-purple-600 dark:border-purple-800 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/30 text-xs font-bold transition-colors shadow-sm bg-white dark:bg-dark-surface"
+                                                                  >
+                                                                      <Repeat size={12} /> Add to Revision
+                                                                  </button>
+                                                                );
+                                                              }
+                                                              
+                                                              let statusText = "";
+                                                              let colorClass = "";
+                                                              
+                                                              const TODAY_MS = new Date().setHours(0,0,0,0);
+                                                              
+                                                              if (rev.revisionCycleCompleted) {
+                                                                  if (rev.futureReviewScheduled) {
+                                                                      statusText = "Scheduled For Future Review";
+                                                                      colorClass = "border-blue-200 bg-blue-50 text-blue-600 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-400";
+                                                                  } else {
+                                                                      statusText = "Completed Revision Cycle";
+                                                                      colorClass = "border-emerald-200 bg-emerald-50 text-emerald-600 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-400";
+                                                                  }
+                                                              } else if (rev.nextRevisionDate) {
+                                                                  const nextDate = new Date(rev.nextRevisionDate).setHours(0,0,0,0);
+                                                                  if (nextDate < TODAY_MS) {
+                                                                      statusText = "Missed";
+                                                                      colorClass = "border-red-200 bg-red-50 text-red-600 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400";
+                                                                  } else {
+                                                                      const stages = [1, 3, 7, 15, 30];
+                                                                      const stageDay = stages[rev.revisionStage] || 1;
+                                                                      statusText = `Day ${stageDay} Pending`;
+                                                                      colorClass = "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-400";
+                                                                  }
+                                                              }
+                                                              
+                                                              return (
+                                                                <button
+                                                                    onClick={() => setActiveRevPopup({ prob, rev })}
+                                                                    className={`flex items-center gap-2 px-2 py-0.5 rounded-md border text-xs font-bold shadow-sm transition-colors cursor-pointer hover:opacity-80 ${colorClass}`}
+                                                                >
+                                                                    <Repeat size={12} /> {statusText}
+                                                                </button>
+                                                              );
+                                                            })()}
+
                                                             {prob.solved && prob.solvedAt && (
                                                                 <div className="flex items-center text-xs font-bold text-success-700 dark:text-success-400 ml-2">
                                                                     <CheckCircle size={12} className="mr-1" />
@@ -575,6 +743,130 @@ export default function SheetView() {
                     </button>
                 </div>
             </div>
+        </div>
+      )}
+
+      {activeRevPopup && (
+        <div className="fixed inset-0 bg-black/60 z-50 backdrop-blur-sm flex justify-center items-center p-4 overflow-y-auto" onClick={(e) => {
+            if (e.target === e.currentTarget) {
+                setActiveRevPopup(null);
+                setShowDeleteAction(false);
+                setDeleteConfirmText("");
+            }
+        }}>
+          <div className="bg-white dark:bg-dark-card w-full max-w-md rounded-2xl shadow-2xl p-6 border border-gray-200 dark:border-dark-border animate-in zoom-in-95 my-8">
+            <h3 className="text-xl font-bold mb-4 dark:text-white break-words pr-8 leading-tight">
+              Revision Status:<br/>
+              <span className="text-primary-600 dark:text-primary-400 text-lg leading-tight">{activeRevPopup.prob.title}</span>
+            </h3>
+            
+            <div className="space-y-4 mb-6">
+              <div className="flex justify-between items-center text-sm font-medium border-b border-gray-100 dark:border-dark-border pb-2">
+                  <span className="text-gray-500 dark:text-gray-400">Current Stage</span>
+                  <span className="dark:text-white font-bold">{activeRevPopup.rev.revisionCycleCompleted ? 'Completed' : `Stage ${activeRevPopup.rev.revisionStage + 1} of 5`}</span>
+              </div>
+              <div className="flex justify-between items-center text-sm font-medium border-b border-gray-100 dark:border-dark-border pb-2">
+                  <span className="text-gray-500 dark:text-gray-400">Next Revision</span>
+                  <span className="dark:text-white font-bold">
+                      {activeRevPopup.rev.nextRevisionDate 
+                          ? new Date(activeRevPopup.rev.nextRevisionDate).toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: 'numeric'})
+                          : 'N/A'}
+                  </span>
+              </div>
+
+              {/* Revision Timeline */}
+              <div className="bg-gray-50 dark:bg-dark-surface p-4 rounded-xl border border-gray-100 dark:border-dark-border mt-4">
+                  <h4 className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-3">Revision Timeline</h4>
+                  <div className="space-y-3 relative before:absolute before:inset-0 before:ml-[11px] before:-translate-x-px before:h-full before:w-0.5 before:bg-gradient-to-b before:from-emerald-300 before:via-gray-200 dark:before:via-gray-700 before:to-transparent">
+                       {[1, 3, 7, 15, 30].map((days, idx) => {
+                           const isCompleted = idx < activeRevPopup.rev.revisionStage || activeRevPopup.rev.revisionCycleCompleted;
+                           const isCurrent = idx === activeRevPopup.rev.revisionStage && !activeRevPopup.rev.revisionCycleCompleted;
+                           
+                           let expectedDate = "";
+                           if (isCompleted) {
+                                expectedDate = activeRevPopup.rev.revisionHistory?.[idx] ? new Date(activeRevPopup.rev.revisionHistory[idx]).toLocaleDateString(undefined, {month: 'short', day: 'numeric'}) : "Done";
+                           } else if (isCurrent && activeRevPopup.rev.nextRevisionDate) {
+                                expectedDate = new Date(activeRevPopup.rev.nextRevisionDate).toLocaleDateString(undefined, {month: 'short', day: 'numeric'});
+                           } else {
+                                expectedDate = `Interval: ${days}d`;
+                           }
+
+                           return (
+                               <div key={idx} className="relative flex items-center justify-between">
+                                    <div className={`flex items-center gap-3 z-10 w-full`}>
+                                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold border-2 
+                                            ${isCompleted ? 'bg-emerald-500 border-emerald-500 text-white' : isCurrent ? 'bg-white dark:bg-dark-card border-primary-500 text-primary-500' : 'bg-gray-100 dark:bg-dark-surface border-gray-300 dark:border-gray-600 text-gray-400'}`}>
+                                            {isCompleted ? '✓' : idx + 1}
+                                        </div>
+                                        <div className={`flex-1 flex justify-between items-center ${isCurrent ? 'bg-white dark:bg-dark-card shadow-sm border-gray-200 dark:border-gray-600' : 'bg-transparent border-transparent'} px-3 py-1.5 rounded-lg border transition-all`}>
+                                            <span className={`text-xs font-bold ${isCompleted ? 'text-gray-400 line-through' : isCurrent ? 'text-slate-800 dark:text-white' : 'text-gray-400'}`}>
+                                                Day {days} {isCurrent && '(Next)'}
+                                            </span>
+                                            <span className={`text-[10px] font-bold ${isCompleted ? 'text-emerald-600 dark:text-emerald-400' : isCurrent ? 'text-primary-600 dark:text-primary-400' : 'text-gray-400'}`}>
+                                                {expectedDate}
+                                            </span>
+                                        </div>
+                                    </div>
+                               </div>
+                           );
+                       })}
+                  </div>
+              </div>
+            </div>
+
+            {!showDeleteAction ? (
+                <button 
+                    onClick={() => setShowDeleteAction(true)}
+                    className="w-full py-3 rounded-xl font-bold border-2 border-red-100 text-red-600 hover:bg-red-50 dark:border-red-900/40 dark:text-red-400 dark:hover:bg-red-900/20 transition-colors text-sm"
+                >
+                    Remove from Spaced Revision
+                </button>
+            ) : (
+                <div className="bg-red-50 dark:bg-red-900/10 p-5 rounded-xl border border-red-100 dark:border-red-900/30">
+                    <p className="text-sm text-red-600 dark:text-red-400 font-bold mb-3">Type "DELETE" to confirm removal:</p>
+                    <input 
+                        type="text" 
+                        value={deleteConfirmText}
+                        onChange={(e) => setDeleteConfirmText(e.target.value)}
+                        className="w-full px-4 py-2.5 rounded-xl border border-red-200 dark:border-red-800 bg-white dark:bg-dark-surface text-slate-900 dark:text-white font-bold text-sm mb-4 outline-none focus:ring-2 focus:ring-red-500 shadow-inner"
+                        placeholder="DELETE"
+                    />
+                    <div className="flex gap-3">
+                        <button 
+                            onClick={() => { setShowDeleteAction(false); setDeleteConfirmText(""); }}
+                            className="flex-1 py-2.5 text-sm font-bold rounded-xl bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors hover:bg-gray-300 dark:hover:bg-gray-600"
+                        >
+                            Cancel
+                        </button>
+                        <button 
+                            disabled={deleteConfirmText !== "DELETE"}
+                            onClick={async () => {
+                                if (user && deleteConfirmText === "DELETE") {
+                                    const userRef = doc(db, COLLECTIONS.USERS, user.uid);
+                                    await updateDoc(userRef, {
+                                        [`revisions.${activeRevPopup.prob.id}`]: deleteField()
+                                    });
+                                    refreshProfile();
+                                    setActiveRevPopup(null);
+                                    setShowDeleteAction(false);
+                                    setDeleteConfirmText("");
+                                }
+                            }}
+                            className="flex-1 py-2.5 text-sm font-bold rounded-xl bg-red-600 text-white disabled:opacity-50 transition-all hover:bg-red-700 disabled:hover:bg-red-600 shadow-md"
+                        >
+                            Confirm
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            <button 
+                onClick={() => { setActiveRevPopup(null); setShowDeleteAction(false); setDeleteConfirmText(""); }}
+                className="w-full mt-4 py-3 rounded-xl font-bold bg-gray-100 dark:bg-dark-surface hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors dark:text-gray-300 text-sm"
+            >
+                Close
+            </button>
+          </div>
         </div>
       )}
 
