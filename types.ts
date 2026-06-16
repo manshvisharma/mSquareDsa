@@ -28,15 +28,40 @@ export interface UserProfile {
   uid: string;
   email: string | null;
   displayName: string | null;
+  username?: string; // New: Unique username
+  photoURL?: string; // Profile picture
+  leetcodeHandle?: string;
+  githubHandle?: string;
   role: Role;
   createdAt: number;
   lastActive: number;
   completedProblems: Record<string, number>; // problemId -> timestamp
   revisions?: Record<string, RevisionData>; // problemId -> RevisionData
+  bookmarks?: Record<string, boolean>; // problemId -> true
   streakStart: number;
   currentStreak: number;
   maxStreak: number;
+  points?: number;
+  lastCheckInDate?: string;
   lastSolvedDate: string | null; // YYYY-MM-DD
+  followers?: string[];
+  following?: string[];
+  privacySettings?: {
+      hideStats?: boolean;
+      hideActivity?: boolean;
+  };
+  customBadges?: string[];
+}
+
+export interface DirectMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  receiverId: string;
+  content: string;
+  imageUrl?: string;
+  timestamp: number;
+  read: boolean;
 }
 
 export interface Sheet {

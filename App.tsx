@@ -13,6 +13,9 @@ import AdminDashboard from './pages/AdminDashboard';
 import UserOversight from './pages/UserOversight';
 import Account from './pages/Account';
 import RevisionDashboard from './pages/RevisionDashboard';
+import { Leaderboard } from './pages/Leaderboard';
+import { Inbox } from './pages/Inbox';
+import ProfileView from './pages/ProfileView';
 
 // --- Auth Context ---
 
@@ -184,8 +187,11 @@ export default function App() {
 
           {/* User Routes */}
           <Route path="/account" element={<RequireAuth><Layout><Account /></Layout></RequireAuth>} />
+          <Route path="/user/:userId" element={<RequireAuth><Layout><ProfileView /></Layout></RequireAuth>} />
           <Route path="/sheet/:sheetId" element={<RequireAuth><Layout><SheetView /></Layout></RequireAuth>} />
           <Route path="/revision" element={<RequireAuth><Layout><RevisionDashboard /></Layout></RequireAuth>} />
+          <Route path="/leaderboard" element={<RequireAuth><Layout><Leaderboard /></Layout></RequireAuth>} />
+          <Route path="/inbox" element={<RequireAuth><Layout><Inbox /></Layout></RequireAuth>} />
           <Route path="/" element={<RequireAuth><Layout><UserDashboard /></Layout></RequireAuth>} />
         </Routes>
       </Router>

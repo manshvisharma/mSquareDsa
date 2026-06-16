@@ -3,11 +3,15 @@ import { useAuth } from '../App';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { COLLECTIONS } from '../constants';
-import { User, Key, Save, CheckCircle } from 'lucide-react';
+import { User, Key, Save, CheckCircle, Shield } from 'lucide-react';
 
 export default function Account() {
   const { user, profile, refreshProfile } = useAuth();
   const [displayName, setDisplayName] = useState(profile?.displayName || '');
+  const [username, setUsername] = useState(profile?.username || '');
+  const [photoURL, setPhotoURL] = useState(profile?.photoURL || '');
+  const [hideStats, setHideStats] = useState(profile?.privacySettings?.hideStats || false);
+  const [hideActivity, setHideActivity] = useState(profile?.privacySettings?.hideActivity || false);
   const [isSaving, setIsSaving] = useState(false);
   const [msg, setMsg] = useState({ type: '', text: '' });
 
@@ -18,10 +22,23 @@ export default function Account() {
     setMsg({ type: '', text: '' });
 
     try {
+      let finalUsername = username.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
+      if (!finalUsername) {
+        finalUsername = `user_${Date.now().toString().slice(-6)}`;
+        setUsername(finalUsername);
+      }
+      
+      const pUrl = photoURL.trim() || `https://api.dicebear.com/7.x/adventurer/svg?seed=${finalUsername}`;
+
       // Update Auth (compat method on user object)
-      await user.updateProfile({ displayName });
+      await user.updateProfile({ displayName, photoURL: pUrl });
       // Update Firestore
-      await updateDoc(doc(db, COLLECTIONS.USERS, user.uid), { displayName });
+      await updateDoc(doc(db, COLLECTIONS.USERS, user.uid), { 
+          displayName, 
+          username: finalUsername,
+          photoURL: pUrl,
+          privacySettings: { hideStats, hideActivity }
+      });
       await refreshProfile();
       setMsg({ type: 'success', text: 'Profile updated successfully!' });
     } catch (err: any) {
@@ -69,15 +86,75 @@ export default function Account() {
             />
           </div>
           <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Profile Picture URL</label>
+            <div className="flex gap-4 items-center">
+                {photoURL && !photoURL.includes('dicebear') ? (
+                    <img src={photoURL} alt="Preview" className="w-12 h-12 rounded-full object-cover border border-gray-200 dark:border-dark-border shrink-0" />
+                ) : (
+                    <div className="w-12 h-12 rounded-full border border-gray-200 dark:border-dark-border shrink-0 bg-primary-100 flex items-center justify-center font-bold text-primary-600">
+                        {displayName ? displayName[0].toUpperCase() : 'U'}
+                    </div>
+                )}
+                <input 
+                  type="text" 
+                  value={photoURL}
+                  onChange={(e) => setPhotoURL(e.target.value)}
+                  placeholder="https://example.com/avatar.png"
+                  className="w-full px-4 py-2 bg-white dark:bg-dark-surface border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-primary-500 dark:text-white outline-none"
+                />
+            </div>
+            <p className="text-xs text-gray-500 mt-1">Leave empty to use a generated avatar.</p>
+          </div>
+          <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Display Name</label>
             <input 
               type="text" 
               required
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
-              className="w-full px-4 py-2 bg-white dark:bg-dark-surface border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-primary-500 dark:text-white"
+              className="w-full px-4 py-2 bg-white dark:bg-dark-surface border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-primary-500 dark:text-white outline-none"
             />
           </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Unique Username (@)</label>
+            <input 
+              type="text" 
+              required
+              value={username}
+              onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+              placeholder="e.g. johndoe, coder_expert"
+              className="w-full px-4 py-2 bg-white dark:bg-dark-surface border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-primary-500 dark:text-white outline-none"
+            />
+          </div>
+          
+          <div className="pt-4 border-t border-gray-100 dark:border-dark-border space-y-3">
+             <h3 className="text-md font-bold dark:text-white flex items-center gap-2">
+               <Shield size={18} className="text-primary-500" /> Privacy Controls
+             </h3>
+             <label className="flex items-center gap-3 cursor-pointer group">
+                <input 
+                    type="checkbox" 
+                    checked={hideStats}
+                    onChange={(e) => setHideStats(e.target.checked)}
+                    className="w-5 h-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                />
+                <span className="text-sm font-medium text-slate-700 dark:text-gray-300 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
+                    Hide my profile from Leaderboard
+                </span>
+             </label>
+             <label className="flex items-center gap-3 cursor-pointer group">
+                <input 
+                    type="checkbox" 
+                    checked={hideActivity}
+                    onChange={(e) => setHideActivity(e.target.checked)}
+                    className="w-5 h-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                />
+                <span className="text-sm font-medium text-slate-700 dark:text-gray-300 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
+                    Make my activity log private
+                </span>
+             </label>
+          </div>
+
           <button 
             type="submit" 
             disabled={isSaving}

@@ -116,6 +116,19 @@ export const getProblems = async (subPatternId: string): Promise<Problem[]> => {
   return data.sort((a, b) => a.order - b.order);
 };
 
+export const getProblemDictionary = async (problemIds: string[]): Promise<Record<string, Problem>> => {
+  const pRef = collection(db, COLLECTIONS.PROBLEMS);
+  const pSnap = await getDocs(query(pRef));
+  const dict: Record<string, Problem> = {};
+  const idSet = new Set(problemIds);
+  pSnap.docs.forEach(d => {
+      if (idSet.has(d.id)) {
+          dict[d.id] = { id: d.id, ...d.data() } as Problem;
+      }
+  });
+  return dict;
+};
+
 // --- Advanced Stats Fetching ---
 
 export const getSheetsWithStats = async (userSolvedIds: Set<string>): Promise<(Sheet & { total: number, solved: number })[]> => {
@@ -189,7 +202,42 @@ export const getNotesForSheet = async (userId: string, problemIds: string[]): Pr
 
 // --- Data Assembly ---
 
+const sheetStructureCache = new Map<string, { timestamp: number, data: any }>();
+const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes for memory/localStorage
+
+export const clearSheetCache = (sheetId?: string) => {
+  if (sheetId) {
+     sheetStructureCache.delete(sheetId);
+     localStorage.removeItem(`sheet_cache_${sheetId}`);
+  } else {
+     sheetStructureCache.clear();
+     Object.keys(localStorage).forEach(k => {
+         if (k.startsWith('sheet_cache_')) localStorage.removeItem(k);
+     });
+  }
+};
+
 export const getSheetFullStructure = async (sheetId: string) => {
+  const now = Date.now();
+  
+  // 1. Check memory cache
+  const cached = sheetStructureCache.get(sheetId);
+  if (cached && (now - cached.timestamp < CACHE_DURATION)) {
+    return cached.data;
+  }
+
+  // 2. Check localStorage cache
+  const localCachedStr = localStorage.getItem(`sheet_cache_${sheetId}`);
+  if (localCachedStr) {
+      try {
+          const localCached = JSON.parse(localCachedStr);
+          if (now - localCached.timestamp < CACHE_DURATION) {
+              sheetStructureCache.set(sheetId, localCached);
+              return localCached.data;
+          }
+      } catch (e) {}
+  }
+
   const topics = await getTopics(sheetId);
   if (topics.length === 0) return [];
 
@@ -212,13 +260,23 @@ export const getSheetFullStructure = async (sheetId: string) => {
     subProblemMap.set(sp.id, problemsNested[index]);
   });
 
-  return topics.map(t => ({
+  const result = topics.map(t => ({
     ...t,
     subPatterns: (topicSubMap.get(t.id) || []).map(sp => ({
       ...sp,
       problems: subProblemMap.get(sp.id) || []
     }))
   }));
+
+  const cachePayload = { timestamp: now, data: result };
+  sheetStructureCache.set(sheetId, cachePayload);
+  try {
+      localStorage.setItem(`sheet_cache_${sheetId}`, JSON.stringify(cachePayload));
+  } catch (e) {
+      // Handle quota exceeded
+  }
+  
+  return result;
 };
 
 export const toggleProblem = async (userId: string, problemId: string, isSolved: boolean) => {
@@ -280,6 +338,50 @@ export const batchAddProblems = async (subPatternId: string, problems: Omit<Prob
   });
 
   await batch.commit();
+};
+
+export const getSheetsFullSearch = async (queryStr: string): Promise<{sheet: Sheet, problems: Problem[]}[]> => {
+  const allSheets = await getSheets();
+  const allProblemsRef = collection(db, COLLECTIONS.PROBLEMS);
+  // doing client side search across all problems since no full text search engine is available in Firebase
+  const pSnap = await getDocs(query(allProblemsRef, where('isDeleted', '==', false)));
+  const allProblems = pSnap.docs.map(d => ({ id: d.id, ...d.data() } as Problem));
+  
+  const lowerQuery = queryStr.toLowerCase();
+  const matchedProblems = allProblems.filter(p => p.title.toLowerCase().includes(lowerQuery) || p.platform.toLowerCase().includes(lowerQuery));
+  
+  if (matchedProblems.length === 0) return [];
+
+  // Need mapping logic
+  const sRef = collection(db, COLLECTIONS.SUBPATTERNS);
+  const sSnap = await getDocs(query(sRef));
+  const subToTopic = new Map<string, string>();
+  sSnap.docs.forEach(d => subToTopic.set(d.id, d.data().topicId));
+
+  const tRef = collection(db, COLLECTIONS.TOPICS);
+  const tSnap = await getDocs(query(tRef));
+  const topicToSheet = new Map<string, string>();
+  tSnap.docs.forEach(d => topicToSheet.set(d.id, d.data().sheetId));
+
+  const result: Record<string, {sheet: Sheet, problems: Problem[]}> = {};
+  
+  matchedProblems.forEach(p => {
+     const topicId = subToTopic.get(p.subPatternId);
+     if (topicId) {
+         const sheetId = topicToSheet.get(topicId);
+         if (sheetId) {
+             const sheet = allSheets.find(s => s.id === sheetId);
+             if (sheet) {
+                 if (!result[sheetId]) {
+                     result[sheetId] = { sheet, problems: [] };
+                 }
+                 result[sheetId].problems.push(p);
+             }
+         }
+     }
+  });
+
+  return Object.values(result);
 };
 
 export const getAllUsers = async (): Promise<UserProfile[]> => {

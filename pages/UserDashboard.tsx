@@ -3,7 +3,10 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../App';
 import { getSheetsWithStats } from '../services/dataService';
 import { Sheet } from '../types';
-import { Award, Zap, ChevronRight, Activity, Flame, CheckCircle2, Trophy, Target, Quote as QuoteIcon, Info, Moon, Sun, Coffee, Calendar, X, Rocket, BarChart3 } from 'lucide-react';
+import { doc, getDoc, updateDoc, increment, setDoc } from 'firebase/firestore';
+import { db } from '../firebase';
+import { COLLECTIONS } from '../constants';
+import { Award, Zap, ChevronRight, Activity, Flame, CheckCircle2, Trophy, Target, Quote as QuoteIcon, Info, Moon, Sun, Coffee, Calendar, X, Rocket, BarChart3, Search as SearchIcon } from 'lucide-react';
 
 // --- Creative Feature: User Ranks ---
 const RANKS = [
@@ -24,7 +27,7 @@ const QUOTES = [
   "Optimism is an occupational hazard of programming."
 ];
 
-const ContributionGraph = ({ completedProblems }: { completedProblems: Record<string, number> }) => {
+export const ContributionGraph = ({ completedProblems }: { completedProblems: Record<string, number> }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Aggregated problem count per date
@@ -144,7 +147,7 @@ const RankModal = ({ isOpen, onClose, currentRankName }: { isOpen: boolean, onCl
     if (!isOpen) return null;
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-            <div className="bg-white dark:bg-dark-card w-full max-w-md rounded-2xl shadow-2xl border border-gray-200 dark:border-dark-border overflow-hidden">
+            <div className="bg-white dark:bg-dark-card glass-container w-full max-w-md rounded-2xl shadow-2xl border border-gray-200 dark:border-dark-border overflow-hidden">
                 <div className="p-4 border-b border-gray-100 dark:border-dark-border flex justify-between items-center bg-gray-50 dark:bg-dark-surface">
                     <h3 className="font-bold text-lg dark:text-white flex items-center gap-2"><Trophy size={18} className="text-yellow-500"/> Mastery Ranks</h3>
                     <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={20}/></button>
@@ -174,11 +177,37 @@ const RankModal = ({ isOpen, onClose, currentRankName }: { isOpen: boolean, onCl
 };
 
 export default function UserDashboard() {
-  const { profile } = useAuth();
+  const { user, profile, refreshProfile } = useAuth();
   const [sheets, setSheets] = useState<(Sheet & { total: number, solved: number })[]>([]);
   const [loading, setLoading] = useState(true);
   const [quote, setQuote] = useState(QUOTES[0]);
   const [isRankModalOpen, setIsRankModalOpen] = useState(false);
+  const [showUsernameModal, setShowUsernameModal] = useState(false);
+  const [usernameInput, setUsernameInput] = useState('');
+
+  useEffect(() => {
+    // Only show modal if profile is fully loaded and username is definitely missing
+    if (profile && profile.username === undefined && profile.createdAt) {
+        setShowUsernameModal(true);
+    }
+  }, [profile]);
+
+  const handleSaveUsername = async () => {
+      if (!user || !usernameInput.trim()) return;
+      const formatted = usernameInput.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
+      if (!formatted) return;
+      try {
+          const randomAvatar = `https://api.dicebear.com/7.x/adventurer/svg?seed=${formatted}`;
+          await setDoc(doc(db, COLLECTIONS.USERS, user.uid), { 
+              username: formatted,
+              photoURL: randomAvatar
+          }, { merge: true });
+          await refreshProfile();
+          setShowUsernameModal(false);
+      } catch (err) {
+          console.error(err);
+      }
+  };
 
   useEffect(() => {
     setQuote(QUOTES[Math.floor(Math.random() * QUOTES.length)]);
@@ -205,6 +234,21 @@ export default function UserDashboard() {
   // Daily Mission Logic
   const dailyTarget = 3;
   const todayStr = new Date().toLocaleDateString('en-CA');
+  const hasCheckedIn = profile?.lastCheckInDate === todayStr;
+
+  const handleCheckIn = async () => {
+      if (!user || hasCheckedIn) return;
+      try {
+          await updateDoc(doc(db, COLLECTIONS.USERS, user.uid), {
+             points: increment(10),
+             lastCheckInDate: todayStr
+          });
+          refreshProfile();
+      } catch (err) {
+          console.error(err);
+      }
+  };
+
   const problemsToday = useMemo(() => {
     return Object.values(profile?.completedProblems || {}).filter(ts => {
         return ts && new Date(ts).toLocaleDateString('en-CA') === todayStr;
@@ -250,7 +294,43 @@ export default function UserDashboard() {
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto pb-10">
+      <RankModal isOpen={isRankModalOpen} onClose={() => setIsRankModalOpen(false)} currentRankName={rank.name} />
       
+      {/* Username Config Modal */}
+      {showUsernameModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in zoom-in-95 duration-200">
+              <div className="bg-white dark:bg-dark-card w-full max-w-sm rounded-2xl shadow-2xl p-6 border border-gray-200 dark:border-dark-border text-center">
+                  <Rocket size={48} className="mx-auto text-primary-500 mb-4" />
+                  <h2 className="text-xl font-black text-slate-800 dark:text-white mb-2">Choose Your Handle</h2>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">Pick a unique username to appear on the Hall of Fame.</p>
+                  <div className="flex bg-gray-50 dark:bg-dark-surface rounded-xl border border-gray-200 dark:border-dark-border overflow-hidden mb-4 focus-within:ring-2 focus-within:ring-primary-500 transition-all">
+                      <span className="pl-4 py-3 text-gray-400 font-bold bg-gray-100 dark:bg-dark-border">@</span>
+                      <input 
+                          type="text" 
+                          value={usernameInput}
+                          onChange={(e) => setUsernameInput(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+                          placeholder="username"
+                          className="w-full px-3 py-3 bg-transparent outline-none text-slate-800 dark:text-white font-bold"
+                          autoFocus
+                      />
+                  </div>
+                  <button 
+                      onClick={handleSaveUsername}
+                      disabled={!usernameInput.trim()}
+                      className="w-full px-4 py-3 bg-primary-600 hover:bg-primary-700 text-white font-bold rounded-xl shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                      Claim Username
+                  </button>
+                  <button 
+                       onClick={() => setShowUsernameModal(false)}
+                       className="mt-3 text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 font-semibold"
+                  >
+                       I'll do this later
+                  </button>
+              </div>
+          </div>
+      )}
+
       {/* 1. Enhanced Header */}
       <div className="flex flex-col md:flex-row justify-between items-center md:items-end gap-6 pb-6 border-b border-gray-200 dark:border-dark-border">
           <div className="text-center md:text-left">
@@ -264,30 +344,70 @@ export default function UserDashboard() {
                     <Trophy size={10} className="mr-1.5" /> {rank.name}
                 </div>
               </div>
-              <div className="flex items-center justify-center md:justify-start gap-2 text-sm text-slate-400 dark:text-gray-500 italic">
+              <div className="flex items-center justify-center md:justify-start gap-2 text-sm text-slate-400 dark:text-gray-500 italic mt-1">
                   <QuoteIcon size={14} className="transform scale-x-[-1]" />
                   {quote}
               </div>
+              <div className="mt-4 flex flex-wrap gap-2 justify-center md:justify-start">
+                  <button 
+                      onClick={() => {
+                          const text = `🚀 *My DSA Progress*\n\n🔥 Streak: ${profile?.currentStreak || 0} days\n🏆 Max Streak: ${profile?.maxStreak || 0} days\n✅ Solved: ${totalSolved} problems\n🏅 Rank: ${rank.name}\n\nJoin me in mastering algorithms!`;
+                          navigator.clipboard.writeText(text);
+                          alert("Progress summary copied to clipboard!");
+                      }} 
+                      className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white rounded-xl font-bold shadow-md shadow-emerald-500/20 transition-all active:scale-95 text-xs flex items-center justify-center gap-2"
+                  >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" y1="2" x2="12" y2="15"></line></svg>
+                      Share Progress
+                  </button>
+                  <button 
+                      onClick={() => {
+                          const profileUrl = `${window.location.origin}/user/${profile?.username || user?.uid}`;
+                          navigator.clipboard.writeText(profileUrl);
+                          alert("Profile link copied to clipboard!");
+                      }} 
+                      className="px-4 py-2 bg-white dark:bg-dark-surface border border-gray-200 dark:border-dark-border hover:bg-gray-50 dark:hover:bg-dark-border text-slate-700 dark:text-gray-300 rounded-xl font-bold shadow-sm transition-all active:scale-95 text-xs flex items-center justify-center gap-2"
+                  >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="10" y1="14" x2="21" y2="3"></line><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg>
+                      Copy Profile Link
+                  </button>
+              </div>
           </div>
           
-          <div className="flex items-center gap-4 bg-white dark:bg-dark-card px-5 py-3 rounded-2xl shadow-sm border border-gray-100 dark:border-dark-border">
-               <div className={`p-3 rounded-xl shadow-inner ${rank.bg} ${rank.color}`}>
-                   <Rocket size={24} />
-               </div>
-               <div>
-                   <div className="flex items-center gap-2">
-                        <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Mastery Level</div>
-                        <button onClick={() => setIsRankModalOpen(true)} className="text-gray-400 hover:text-primary-500 transition-colors">
-                            <Info size={14} />
-                        </button>
+          <div className="flex flex-col md:flex-row items-center gap-4">
+              <div className="flex flex-col items-center md:items-end w-full md:w-auto">
+                  {hasCheckedIn ? (
+                      <div className="w-full md:w-auto px-6 py-3 bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl flex flex-col items-center md:items-end box-border">
+                            <div className="text-emerald-600 dark:text-emerald-400 font-black flex items-center gap-2 text-sm">
+                                <CheckCircle2 size={16} /> Checked In
+                            </div>
+                            <div className="text-[10px] text-emerald-500 dark:text-emerald-500/80 font-bold uppercase mt-1">+{profile?.points || 0} pts total</div>
+                      </div>
+                  ) : (
+                      <button onClick={handleCheckIn} className="w-full md:w-auto px-6 py-3 bg-gradient-to-tr from-yellow-400 to-orange-500 hover:from-yellow-500 hover:to-orange-600 text-white font-black rounded-xl shadow-lg shadow-orange-500/30 transition-transform active:scale-95 flex items-center justify-center gap-2 animate-pulse">
+                          <Zap size={18} fill="currentColor" /> Claim Daily 10pts
+                      </button>
+                  )}
+              </div>
+              <div className="flex items-center gap-4 bg-white dark:bg-dark-card glass-panel px-5 py-3 rounded-2xl shadow-sm border border-gray-100 dark:border-dark-border w-full md:w-auto">
+                   <div className={`p-3 rounded-xl shadow-inner ${rank.bg} ${rank.color}`}>
+                       <Rocket size={24} />
                    </div>
-                   <div className={`text-xl font-black ${rank.color}`}>{rank.name}</div>
-                   {nextRank && (
-                       <div className="w-36 h-2 bg-gray-100 dark:bg-slate-800 rounded-full mt-2 overflow-hidden border border-gray-200 dark:border-slate-700">
-                           <div className="h-full bg-gradient-to-r from-primary-500 to-violet-500 transition-all duration-1000 shadow-[0_0_8px_rgba(99,102,241,0.4)]" style={{width: `${progressToNext}%`}}></div>
+                   <div className="flex-1 md:flex-none">
+                       <div className="flex items-center gap-2">
+                           <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Mastery Level</div>
+                           <button onClick={() => setIsRankModalOpen(true)} className="text-gray-400 hover:text-primary-500 transition-colors">
+                               <Info size={14} />
+                           </button>
                        </div>
-                   )}
-               </div>
+                       <div className={`text-xl font-black ${rank.color}`}>{rank.name}</div>
+                       {nextRank && (
+                           <div className="w-36 h-2 bg-gray-100 dark:bg-slate-800 rounded-full mt-2 overflow-hidden border border-gray-200 dark:border-slate-700">
+                               <div className="h-full bg-gradient-to-r from-primary-500 to-violet-500 transition-all duration-1000 shadow-[0_0_8px_rgba(99,102,241,0.4)]" style={{width: `${progressToNext}%`}}></div>
+                           </div>
+                       )}
+                   </div>
+              </div>
           </div>
       </div>
 
@@ -297,7 +417,7 @@ export default function UserDashboard() {
              {/* Main Stats Cards */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 {statsList.map((stat, i) => (
-                    <div key={i} className="bg-white dark:bg-dark-card rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-dark-border group hover:border-primary-200 transition-all hover:-translate-y-1">
+                    <div key={i} className="bg-white dark:bg-dark-card glass-container rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-dark-border group hover:border-primary-200 transition-all hover:-translate-y-1">
                         <div className={`mb-3 p-2 w-fit rounded-lg ${stat.bg} ${stat.text} group-hover:scale-110 transition-transform`}>
                             <stat.icon size={20} fill={stat.fill ? "currentColor" : "none"} />
                         </div>
@@ -308,7 +428,7 @@ export default function UserDashboard() {
             </div>
 
             {/* Smart Activity Log (Dynamic clipping applied) */}
-            <div className="bg-white dark:bg-dark-card rounded-2xl shadow-sm border border-gray-100 dark:border-dark-border p-6">
+            <div className="bg-white dark:bg-dark-card glass-container rounded-2xl shadow-sm border border-gray-100 dark:border-dark-border p-6">
                 <div className="flex items-center justify-between mb-8">
                     <div>
                         <h2 className="text-lg font-black text-slate-800 dark:text-white">Activity Log</h2>
@@ -319,6 +439,23 @@ export default function UserDashboard() {
                     </div>
                 </div>
                 <ContributionGraph completedProblems={profile?.completedProblems || {}} />
+            </div>
+
+            {/* Quick Actions / Daily Random */}
+            <div className="bg-gradient-to-r from-emerald-500 to-teal-500 rounded-2xl shadow-sm p-6 text-white flex flex-col md:flex-row items-center justify-between gap-6 group hover:shadow-lg hover:shadow-emerald-500/20 transition-all">
+                <div>
+                    <h2 className="text-xl font-black mb-1 flex items-center gap-2"><Target size={22} className="text-emerald-100" /> Daily Brain Teaser</h2>
+                    <p className="text-teal-100 text-sm font-medium">Click to grab a random problem from your roadmap and keep your skills sharp.</p>
+                </div>
+                <button 
+                    onClick={() => {
+                        const event = new KeyboardEvent('keydown', { key: 'k', metaKey: true });
+                        window.dispatchEvent(event);
+                    }}
+                    className="px-6 py-3 bg-white text-emerald-600 rounded-xl font-bold shadow-md hover:bg-emerald-50 transition-colors flex items-center gap-2 flex-shrink-0"
+                >
+                    <SearchIcon size={18} /> Search Library
+                </button>
             </div>
 
             {/* Sheets List */}
@@ -339,7 +476,7 @@ export default function UserDashboard() {
                                 <Link 
                                     key={sheet.id} 
                                     to={`/sheet/${sheet.id}`}
-                                    className="group flex flex-col bg-white dark:bg-dark-card rounded-2xl shadow-sm border border-gray-100 dark:border-dark-border overflow-hidden hover:shadow-xl transition-all hover:border-primary-400"
+                                    className="group flex flex-col bg-white dark:bg-dark-card glass-container rounded-2xl shadow-sm border border-gray-100 dark:border-dark-border overflow-hidden hover:shadow-xl transition-all hover:border-primary-400"
                                 >
                                     <div className="p-6 flex-1">
                                         <div className="flex justify-between items-start mb-4">
@@ -415,7 +552,7 @@ export default function UserDashboard() {
              </div>
              
              {/* 3. Mastery Badges */}
-             <div className="bg-white dark:bg-dark-card rounded-2xl shadow-sm border border-gray-100 dark:border-dark-border p-6">
+             <div className="bg-white dark:bg-dark-card glass-container rounded-2xl shadow-sm border border-gray-100 dark:border-dark-border p-6">
                  <h3 className="font-black text-lg text-slate-800 dark:text-white mb-6 flex items-center gap-2 uppercase tracking-tight">
                      <Award className="text-yellow-500" /> Mastery Badges
                  </h3>

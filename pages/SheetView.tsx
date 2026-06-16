@@ -6,9 +6,11 @@ import { useAuth } from '../App';
 import { doc, getDoc, setDoc, updateDoc, deleteField } from 'firebase/firestore';
 import { db } from '../firebase';
 import { COLLECTIONS } from '../constants';
-import { ChevronDown, ChevronUp, CheckCircle, Circle, ExternalLink, Filter, Zap, ArrowRight, StickyNote, X, Save, Shuffle, Search, Repeat } from 'lucide-react';
+import { ChevronDown, ChevronUp, CheckCircle, Circle, ExternalLink, Filter, Zap, ArrowRight, StickyNote, X, Save, Shuffle, Search, Repeat, Share2, Users } from 'lucide-react';
 import { PlatformIcon } from '../components/PlatformIcon';
+import ReactMarkdown from 'react-markdown';
 import confetti from 'canvas-confetti';
+import { collection, query, getDocs, addDoc, where } from 'firebase/firestore';
 
 interface FullProblem extends Problem {
   solved: boolean;
@@ -36,10 +38,17 @@ export default function SheetView() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
   const [currentNoteProb, setCurrentNoteProb] = useState<{id: string, title: string, content: string} | null>(null);
+  const [isEditingNote, setIsEditingNote] = useState(true);
   
   const [activeRevPopup, setActiveRevPopup] = useState<{ prob: FullProblem, rev: any } | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [showDeleteAction, setShowDeleteAction] = useState(false);
+  
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [shareProb, setShareProb] = useState<FullProblem | null>(null);
+  const [shareMessage, setShareMessage] = useState('');
+  const [shareTargets, setShareTargets] = useState<{uid: string, username: string}[]>([]);
+  const [selectedShareTarget, setSelectedShareTarget] = useState('');
   
   const [activeTopicId, setActiveTopicId] = useState<string | null>(() => {
     return localStorage.getItem(`sheet_${sheetId}_activeTopic`) || null;
@@ -225,6 +234,52 @@ export default function SheetView() {
     setExpandedSubPatterns(newSet);
   };
 
+  const handleOpenShare = async (p: FullProblem, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setShareProb(p);
+    setShareMessage(`Hey! I need some help or want to discuss this problem:\n\n**${p.title}**\n${p.url}`);
+    
+    // Fetch followers/following users to populate the target dropdown
+    if (user && profile) {
+        // Find users we have chatted with
+        const [q1, q2] = await Promise.all([
+          getDocs(query(collection(db, COLLECTIONS.MESSAGES), where('receiverId', '==', user.uid))),
+          getDocs(query(collection(db, COLLECTIONS.MESSAGES), where('senderId', '==', user.uid)))
+        ]);
+        const userIds = new Set<string>();
+        q1.docs.forEach(d => userIds.add(d.data().senderId));
+        q2.docs.forEach(d => userIds.add(d.data().receiverId));
+        userIds.delete(user.uid);
+
+        const snap = await getDocs(query(collection(db, COLLECTIONS.USERS)));
+        const options = snap.docs
+             .filter(d => userIds.has(d.id))
+             .map(d => ({ uid: d.id, username: d.data().displayName || d.data().username || d.data().email?.split('@')[0] || 'Coder' }));
+        setShareTargets(options);
+    }
+    
+    setIsShareModalOpen(true);
+  };
+
+  const handleShare = async () => {
+      if (!user || !profile || !selectedShareTarget || !shareProb) return;
+      try {
+          await addDoc(collection(db, COLLECTIONS.MESSAGES), {
+              senderId: user.uid,
+              senderName: profile.username || profile.displayName || profile.email?.split('@')[0] || 'Anonymous',
+              receiverId: selectedShareTarget,
+              content: shareMessage,
+              timestamp: Date.now(),
+              read: false
+          });
+          setIsShareModalOpen(false);
+          // Show a silent success without alerting, or maybe alert is okay here since it closes the modal.
+          // Better: just close it and let the user know via a small UI bump or nothing (it sent).
+      } catch (err) {
+          console.error(err);
+      }
+  };
+
   const handleOpenNote = (p: FullProblem, e: React.MouseEvent) => {
     e.stopPropagation();
     setCurrentNoteProb({ id: p.id, title: p.title, content: p.note || '' });
@@ -370,7 +425,7 @@ export default function SheetView() {
   return (
     <div className="max-w-[1400px] mx-auto pb-12 px-2 lg:px-4">
       
-      <div className="bg-white dark:bg-dark-card rounded-2xl shadow-sm p-6 mb-8 border border-gray-200 dark:border-dark-border">
+      <div className="bg-white dark:bg-dark-card glass-container rounded-2xl shadow-sm p-6 mb-8 border border-gray-200 dark:border-dark-border">
         <div className="flex flex-col md:flex-row justify-between items-start gap-6">
             <div className="flex-1">
                 <div className="flex items-center gap-3 mb-2">
@@ -413,7 +468,7 @@ export default function SheetView() {
         </div>
       </div>
 
-      <div className="bg-white dark:bg-dark-card rounded-2xl shadow-sm p-5 pb-6 mb-8 border border-gray-200 dark:border-dark-border">
+      <div className="bg-white dark:bg-dark-card glass-panel rounded-2xl shadow-sm p-5 pb-6 mb-8 border border-gray-200 dark:border-dark-border">
           <div className="flex items-center justify-between mb-4 pb-2 border-b border-gray-100 dark:border-dark-border">
               <h3 className="font-bold text-lg dark:text-white flex items-center">
                   <Repeat className="mr-2 text-primary-600" size={20} />
@@ -458,39 +513,39 @@ export default function SheetView() {
           </div>
       </div>
 
-      <div className="flex flex-col lg:flex-row-reverse gap-8 items-start relative">
-        <div className="w-full lg:w-[340px] flex-shrink-0">
-          <div className="lg:sticky lg:top-4 bg-white dark:bg-dark-card rounded-xl shadow-sm border border-gray-200 dark:border-dark-border overflow-hidden flex flex-col max-h-[85vh]">
-             <div className="p-4 bg-gray-50 dark:bg-dark-surface border-b border-gray-200 dark:border-dark-border">
-                <div className="flex items-center font-extrabold text-xl text-slate-800 dark:text-white mb-3">
-                    <Filter size={20} className="mr-2 text-primary-600" /> 
+      <div className="flex flex-col lg:flex-row-reverse gap-4 items-start relative">
+        <div className="w-full lg:w-[320px] flex-shrink-0">
+          <div className="lg:sticky lg:top-4 bg-white dark:bg-dark-card glass-panel rounded-xl shadow-sm border border-gray-200 dark:border-dark-border overflow-hidden flex flex-col max-h-[85vh]">
+             <div className="p-3 bg-gray-50 dark:bg-dark-surface/50 border-b border-gray-200 dark:border-dark-border">
+                <div className="flex items-center font-extrabold text-lg text-slate-800 dark:text-white mb-2">
+                    <Filter size={18} className="mr-2 text-primary-600" /> 
                     Topics
                 </div>
                 <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={14} />
                     <input 
                         type="text"
                         placeholder="Search problems..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full pl-9 pr-4 py-2 bg-white dark:bg-dark-bg border border-gray-200 dark:border-dark-border rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none dark:text-white"
+                        className="w-full pl-8 pr-3 py-1.5 bg-white dark:bg-dark-bg border border-gray-200 dark:border-dark-border rounded-md text-sm focus:ring-2 focus:ring-primary-500 outline-none dark:text-white"
                     />
                 </div>
              </div>
-             <div className="overflow-y-auto custom-scrollbar flex-1 p-2 space-y-2">
+             <div className="overflow-y-auto custom-scrollbar flex-1 p-2 space-y-1">
                 {topics.map((topic, idx) => (
                     <button
                         key={topic.id}
                         onClick={() => handleTopicChange(topic.id)}
-                        className={`w-full text-left px-4 py-3.5 rounded-lg text-lg font-semibold transition-all flex justify-between items-center group ${
+                        className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-semibold transition-all flex justify-between items-center group ${
                             activeTopicId === topic.id && !searchQuery
                             ? 'bg-primary-600 text-white shadow-md' 
                             : 'text-slate-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-border/50'
                         }`}
                     >
-                        <span className="truncate mr-2 flex-1"><span className={`mr-2 text-base ${activeTopicId === topic.id ? 'opacity-70' : 'opacity-40'}`}>{idx + 1}.</span> {topic.title}</span>
+                        <span className="truncate mr-2 flex-1"><span className={`mr-2 text-[10px] ${activeTopicId === topic.id ? 'opacity-70' : 'opacity-40'}`}>{idx + 1}.</span> {topic.title}</span>
                         {topic.totalProblems > 0 && (
-                            <span className={`text-sm font-bold px-2.5 py-1 rounded-md ${
+                            <span className={`text-xs font-bold px-2 py-0.5 rounded-md ${
                                 activeTopicId === topic.id && !searchQuery
                                 ? 'bg-white/20 text-white'
                                 : 'bg-gray-200 dark:bg-slate-700 text-slate-700 dark:text-white'
@@ -569,16 +624,16 @@ export default function SheetView() {
                                             <div 
                                                 key={prob.id}
                                                 id={`problem-${prob.id}`} 
-                                                className={`p-4 pl-6 flex flex-col md:flex-row md:items-center justify-between group transition-all duration-200 border-b border-gray-100 dark:border-dark-border last:border-0 relative
+                                                className={`p-2 pl-3 flex flex-col md:flex-row md:items-center justify-between group transition-all duration-200 border-b border-gray-100 dark:border-dark-border last:border-0 relative
                                                     ${prob.solved 
-                                                        ? 'bg-success-50 dark:bg-success-900/10 border-l-[6px] border-l-success-500' 
-                                                        : 'bg-white dark:bg-dark-card hover:bg-gray-50 dark:hover:bg-dark-surface/50 border-l-[6px] border-l-transparent hover:border-l-primary-300 dark:hover:border-l-violet-500'
+                                                        ? 'bg-success-50 dark:bg-success-900/10 border-l-[4px] border-l-success-500' 
+                                                        : 'bg-white dark:bg-dark-card hover:bg-gray-50 dark:hover:bg-dark-surface/50 border-l-[4px] border-l-transparent hover:border-l-primary-300 dark:hover:border-l-violet-500'
                                                     }
                                                     ${isNextUp && !prob.solved ? 'border-l-yellow-400 bg-yellow-50/50 dark:bg-yellow-900/10' : ''}
                                                 `}
                                             >
-                                                <div className="flex items-start gap-5 flex-1 mb-4 md:mb-0">
-                                                    <span className={`font-mono text-base pt-1 w-8 text-right ${prob.solved ? 'text-success-700/70 font-bold' : 'text-slate-400 dark:text-slate-600 font-bold'}`}>
+                                                <div className="flex items-start gap-4 flex-1 mb-2 md:mb-0">
+                                                    <span className={`font-mono text-sm pt-0.5 w-6 text-right ${prob.solved ? 'text-success-700/70 font-bold' : 'text-slate-400 dark:text-slate-600 font-bold'}`}>
                                                         {String(pIdx + 1).padStart(2, '0')}
                                                     </span>
                                                     
@@ -587,23 +642,23 @@ export default function SheetView() {
                                                             href={prob.url} 
                                                             target="_blank" 
                                                             rel="noopener noreferrer"
-                                                            className={`text-lg font-semibold flex items-center gap-3 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors ${
+                                                            className={`text-[15px] font-semibold flex items-center gap-2 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors ${
                                                                 prob.solved ? 'text-slate-600 dark:text-slate-400' : 'text-slate-900 dark:text-gray-100'
                                                             }`}
                                                         >
                                                             {prob.title}
-                                                            <ExternalLink size={16} className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-400" />
+                                                            <ExternalLink size={14} className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-400" />
                                                         </a>
                                                         
-                                                        <div className="flex items-center mt-3 gap-4 flex-wrap">
-                                                            <div className="flex items-center gap-2 px-2 py-0.5 rounded-md border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-dark-surface text-xs font-bold text-slate-600 dark:text-slate-300 shadow-sm">
-                                                                <PlatformIcon platform={prob.platform} className="w-3.5 h-3.5" />
+                                                        <div className="flex items-center mt-1 gap-2 flex-wrap">
+                                                            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-dark-surface text-[10px] uppercase font-bold text-slate-600 dark:text-slate-300 shadow-sm">
+                                                                <PlatformIcon platform={prob.platform} className="w-3 h-3" />
                                                                 <span>{prob.platform}</span>
                                                             </div>
                                                             
                                                             <button 
                                                                 onClick={(e) => handleOpenNote(prob, e)}
-                                                                className={`flex items-center gap-2 px-2 py-0.5 rounded-md border text-xs font-bold transition-colors ${
+                                                                className={`flex items-center gap-1.5 px-2 py-0.5 rounded border text-[10px] uppercase font-bold transition-colors ${
                                                                     prob.note 
                                                                     ? 'bg-amber-100 border-amber-200 text-amber-800 dark:bg-amber-900/30 dark:border-amber-800 dark:text-amber-400 shadow-sm'
                                                                     : 'border-transparent text-slate-400 hover:bg-gray-100 dark:hover:bg-dark-surface hover:text-slate-600'
@@ -613,6 +668,34 @@ export default function SheetView() {
                                                                 {prob.note ? "Note" : "Add Note"}
                                                             </button>
 
+                                                            {/* Share Toggle */}
+                                                            <button 
+                                                                onClick={(e) => handleOpenShare(prob, e)}
+                                                                className="p-1 rounded text-slate-400 hover:text-blue-500 transition-colors"
+                                                                title="Share Problem"
+                                                            >
+                                                                <Share2 size={14} />
+                                                            </button>
+
+                                                            {/* Bookmark Toggle */}
+                                                            <button 
+                                                                onClick={async () => {
+                                                                    if (!user) return;
+                                                                    const isBookmarked = profile?.bookmarks?.[prob.id];
+                                                                    const ref = doc(db, 'users', user.uid);
+                                                                    await setDoc(ref, {
+                                                                        bookmarks: {
+                                                                            [prob.id]: !isBookmarked ? true : false
+                                                                        }
+                                                                    }, { merge: true });
+                                                                    refreshProfile();
+                                                                }}
+                                                                className={`p-1 rounded text-slate-400 hover:text-yellow-500 transition-colors ${profile?.bookmarks?.[prob.id] ? 'text-yellow-500' : ''}`}
+                                                                title="Bookmark Problem"
+                                                            >
+                                                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill={profile?.bookmarks?.[prob.id] ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+                                                            </button>
+
                                                             {(() => {
                                                               if (!profile) return null;
                                                               const rev = profile.revisions?.[prob.id];
@@ -620,7 +703,7 @@ export default function SheetView() {
                                                                 return (
                                                                   <button
                                                                       onClick={() => handleAddToRevision(prob, topic.title)}
-                                                                      className="flex items-center gap-2 px-2 py-0.5 rounded-md border border-purple-200 text-purple-600 dark:border-purple-800 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/30 text-xs font-bold transition-colors shadow-sm bg-white dark:bg-dark-surface"
+                                                                      className="flex items-center gap-1.5 px-2 py-0.5 rounded border border-purple-200 text-purple-600 dark:border-purple-800 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/30 text-[10px] uppercase font-bold transition-colors shadow-sm bg-white dark:bg-dark-surface"
                                                                   >
                                                                       <Repeat size={12} /> Add to Revision
                                                                   </button>
@@ -715,6 +798,65 @@ export default function SheetView() {
         </div>
       </div>
 
+      {isShareModalOpen && shareProb && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <div className="bg-white dark:bg-dark-card w-full max-w-md rounded-xl shadow-2xl overflow-hidden border border-gray-200 dark:border-dark-border animate-in zoom-in-95 duration-200">
+                <div className="p-4 bg-gray-50 dark:bg-dark-surface border-b border-gray-200 dark:border-dark-border flex justify-between items-center">
+                    <h3 className="font-bold text-lg dark:text-white flex items-center gap-2">
+                        <Share2 className="text-primary-500" /> Share Problem
+                    </h3>
+                    <button onClick={() => setIsShareModalOpen(false)} className="text-gray-400 hover:text-slate-800 dark:hover:text-white transition-colors">
+                        <X size={20} />
+                    </button>
+                </div>
+                <div className="p-6 space-y-4">
+                    <div className="bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-800/20 p-3 rounded-lg flex items-start gap-3">
+                        <div className="text-blue-500 mt-0.5"><Zap size={16} /></div>
+                        <div>
+                            <div className="text-sm font-bold text-slate-800 dark:text-white">{shareProb.title}</div>
+                            <div className="text-xs text-slate-500 dark:text-gray-400 mt-1">Sharing this problem will send a direct message.</div>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label className="block text-sm font-bold text-slate-700 dark:text-gray-300 mb-2">Select User</label>
+                        <select 
+                            value={selectedShareTarget} 
+                            onChange={(e) => setSelectedShareTarget(e.target.value)}
+                            className="w-full p-3 bg-gray-50 dark:bg-dark-surface border border-gray-200 dark:border-dark-border rounded-lg text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-primary-500"
+                        >
+                            <option value="">-- Choose someone --</option>
+                            {shareTargets.map(t => (
+                                <option key={t.uid} value={t.uid}>@{t.username}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-bold text-slate-700 dark:text-gray-300 mb-2">Message (Optional)</label>
+                        <textarea 
+                            value={shareMessage}
+                            onChange={(e) => setShareMessage(e.target.value)}
+                            className="w-full h-24 p-3 bg-gray-50 dark:bg-dark-surface border border-gray-200 dark:border-dark-border rounded-lg text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-primary-500 resize-none font-mono text-sm"
+                        />
+                    </div>
+                </div>
+                <div className="p-4 bg-gray-50 dark:bg-dark-surface border-t border-gray-200 dark:border-dark-border flex gap-3">
+                     <button onClick={() => setIsShareModalOpen(false)} className="flex-1 py-2 rounded-lg font-bold bg-white dark:bg-dark-card border border-gray-200 dark:border-dark-border hover:bg-gray-50 dark:hover:bg-dark-surface text-slate-700 dark:text-gray-300 transition-colors">
+                         Cancel
+                     </button>
+                     <button 
+                         onClick={handleShare} 
+                         disabled={!selectedShareTarget}
+                         className="flex-1 py-2 rounded-lg font-bold bg-primary-600 hover:bg-primary-700 text-white transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                     >
+                         <Share2 size={16} /> Send
+                     </button>
+                </div>
+            </div>
+        </div>
+      )}
+
       {isNoteModalOpen && currentNoteProb && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
             <div className="bg-white dark:bg-dark-card w-full max-w-lg rounded-xl shadow-2xl overflow-hidden border border-gray-200 dark:border-dark-border animate-in zoom-in-95 duration-200">
@@ -727,14 +869,48 @@ export default function SheetView() {
                         <X size={24} />
                     </button>
                 </div>
-                <div className="p-6">
-                    <textarea 
-                        className="w-full h-40 p-4 bg-yellow-50 dark:bg-dark-surface border border-yellow-200 dark:border-dark-border rounded-lg text-slate-800 dark:text-gray-200 placeholder-slate-400 focus:ring-2 focus:ring-amber-400 outline-none resize-none"
-                        placeholder="Write your thoughts, approach, or complexity analysis here..."
-                        value={currentNoteProb.content}
-                        onChange={(e) => setCurrentNoteProb({...currentNoteProb, content: e.target.value})}
-                        autoFocus
-                    />
+                <div className="bg-gray-100 dark:bg-dark-surface border-b border-gray-200 dark:border-dark-border flex">
+                    <button 
+                        onClick={() => setIsEditingNote(true)} 
+                        className={`px-6 py-2 text-sm font-bold transition-colors ${isEditingNote ? 'bg-white dark:bg-dark-card text-primary-600 dark:text-primary-400 border-b-2 border-primary-500' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-200/50 dark:hover:bg-dark-border/50'}`}
+                    >
+                        Edit
+                    </button>
+                    <button 
+                        onClick={() => setIsEditingNote(false)} 
+                        className={`px-6 py-2 text-sm font-bold transition-colors ${!isEditingNote ? 'bg-white dark:bg-dark-card text-primary-600 dark:text-primary-400 border-b-2 border-primary-500' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-200/50 dark:hover:bg-dark-border/50'}`}
+                    >
+                        Preview
+                    </button>
+                    {isEditingNote && (
+                        <div className="flex-1 flex justify-end items-center pr-2">
+                             <button
+                                 onClick={() => setCurrentNoteProb({ ...currentNoteProb, content: currentNoteProb.content + `\n\n### Approach 2\n\`\`\`javascript\n// Your code here\n\`\`\`\n`})}
+                                 className="text-[10px] font-bold text-primary-600 bg-primary-50 dark:bg-primary-900/30 dark:text-primary-400 px-3 py-1.5 rounded-lg hover:bg-primary-100 transition-colors"
+                             >
+                                 + Add Approach
+                             </button>
+                        </div>
+                    )}
+                </div>
+                <div className="p-0">
+                    {isEditingNote ? (
+                        <textarea 
+                            className="w-full h-[300px] p-6 bg-yellow-50 dark:bg-dark-surface border-0 rounded-b-lg text-slate-800 dark:text-gray-200 placeholder-slate-400 focus:ring-0 outline-none resize-none font-mono text-sm"
+                            placeholder="Write your thoughts, approach, or complexity analysis here...\n\nSupports **Markdown**, you can easily document multiple approaches!"
+                            value={currentNoteProb.content}
+                            onChange={(e) => setCurrentNoteProb({...currentNoteProb, content: e.target.value})}
+                            autoFocus
+                        />
+                    ) : (
+                        <div className="w-full h-[250px] p-6 bg-white dark:bg-dark-card overflow-y-auto prose dark:prose-invert max-w-none text-sm text-slate-800 dark:text-gray-300">
+                            {currentNoteProb.content ? (
+                                <ReactMarkdown>{currentNoteProb.content}</ReactMarkdown>
+                            ) : (
+                                <p className="text-gray-400 italic mt-0">Nothing to preview yet.</p>
+                            )}
+                        </div>
+                    )}
                 </div>
                 <div className="p-4 border-t border-gray-100 dark:border-dark-border flex justify-end gap-3 bg-gray-50 dark:bg-dark-surface">
                     <button onClick={() => setIsNoteModalOpen(false)} className="px-5 py-2 rounded-lg text-slate-600 hover:bg-gray-200 dark:text-gray-400 dark:hover:bg-dark-card font-semibold">Cancel</button>

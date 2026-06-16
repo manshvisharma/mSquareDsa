@@ -16,7 +16,8 @@ export const COLLECTIONS = {
   TOPICS: 'topics',
   SUBPATTERNS: 'subpatterns',
   PROBLEMS: 'problems',
-  DELETED: 'recycleBin'
+  DELETED: 'recycleBin',
+  MESSAGES: 'messages'
 };
 
 export const ADMIN_EMAILS = [
