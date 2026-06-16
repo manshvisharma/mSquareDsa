@@ -1,20 +1,48 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { COLLECTIONS } from '../constants';
 import { UserProfile, Problem } from '../types';
-import { Trophy, Flame, MessageCircle, Activity, ArrowLeft } from 'lucide-react';
+import { Trophy, Flame, MessageCircle, Activity, ArrowLeft, UserPlus, UserMinus } from 'lucide-react';
 import { getProblemDictionary } from '../services/dataService';
 import { ContributionGraph } from './UserDashboard';
+import { useAuth } from '../App';
 
 export default function ProfileView() {
     const { userId } = useParams();
+    const { user, profile: currentUserProfile, refreshProfile } = useAuth();
     const [profile, setProfile] = useState<UserProfile | null>(null);
     const [profileUid, setProfileUid] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [problemDict, setProblemDict] = useState<Record<string, Problem>>({});
     const [rankIndex, setRankIndex] = useState<number | null>(null);
+
+    const handleFollowToggle = async () => {
+        if (!user || !currentUserProfile || !profileUid) return;
+        const targetId = profileUid;
+        const following = currentUserProfile.following || [];
+        const isFollowing = following.includes(targetId);
+
+        const newFollowing = isFollowing ? following.filter(id => id !== targetId) : [...following, targetId];
+        
+        // Update current user
+        await setDoc(doc(db, COLLECTIONS.USERS, user.uid), { following: newFollowing }, { merge: true });
+        
+        // Update target user's followers list
+        const targetRef = doc(db, COLLECTIONS.USERS, targetId);
+        const targetDoc = await getDoc(targetRef);
+        if (targetDoc.exists()) {
+            const targetData = targetDoc.data() as UserProfile;
+            const followers = targetData.followers || [];
+            const newFollowers = isFollowing ? followers.filter(id => id !== user.uid) : [...followers, user.uid];
+            await setDoc(targetRef, { followers: newFollowers }, { merge: true });
+            
+            // update local profile to reflect changes without full reload
+            setProfile(prev => prev ? { ...prev, followers: newFollowers } : prev);
+        }
+        await refreshProfile();
+    };
 
     useEffect(() => {
         const fetchProfile = async () => {
@@ -152,10 +180,21 @@ export default function ProfileView() {
                      </div>
                  </div>
                  
-                 <div className="absolute top-6 right-6 z-20">
-                      <Link to={`/inbox?user=${profileUid}`} className="bg-primary-600 hover:bg-primary-700 text-white p-3 rounded-full shadow-lg shadow-primary-500/30 transition-transform hover:-translate-y-1 inline-flex items-center justify-center tooltip" title="Message User">
-                          <MessageCircle size={20} />
-                      </Link>
+                 <div className="absolute top-6 right-6 z-20 flex gap-2">
+                      {user && profileUid !== user.uid && (
+                          <button 
+                              onClick={handleFollowToggle}
+                              title={currentUserProfile?.following?.includes(profileUid!) ? "Unfollow User" : "Follow User"}
+                              className={`p-3 rounded-full shadow-lg transition-transform hover:-translate-y-1 inline-flex items-center justify-center ${currentUserProfile?.following?.includes(profileUid!) ? 'bg-gray-100 dark:bg-dark-surface text-slate-700 dark:text-gray-300' : 'bg-primary-600 hover:bg-primary-700 text-white shadow-primary-500/30'}`}
+                          >
+                              {currentUserProfile?.following?.includes(profileUid!) ? <UserMinus size={20} /> : <UserPlus size={20} />}
+                          </button>
+                      )}
+                      {user && profileUid !== user.uid && (
+                          <Link to={`/inbox?user=${profileUid}`} className="bg-primary-600 hover:bg-primary-700 text-white p-3 rounded-full shadow-lg shadow-primary-500/30 transition-transform hover:-translate-y-1 inline-flex items-center justify-center tooltip" title="Message User">
+                              <MessageCircle size={20} />
+                          </Link>
+                      )}
                  </div>
             </div>
             

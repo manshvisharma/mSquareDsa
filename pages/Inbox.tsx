@@ -110,6 +110,21 @@ export const Inbox = () => {
         return Array.from(map.values()).sort((a,b) => b.lastMsg.timestamp - a.lastMsg.timestamp);
     }, [messages, user, usersMap]);
 
+    const [partnerTyping, setPartnerTyping] = useState(false);
+    const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+    useEffect(() => {
+        if (!selectedUser) return;
+        const unsub = onSnapshot(doc(db, COLLECTIONS.TYPING_STATUS, selectedUser), (docSnap) => {
+            if (docSnap.exists() && docSnap.data()?.typingTo === user?.uid) {
+                setPartnerTyping(true);
+            } else {
+                setPartnerTyping(false);
+            }
+        });
+        return () => unsub();
+    }, [selectedUser, user]);
+
     useEffect(() => {
         if (selectedUser) {
             bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -119,6 +134,22 @@ export const Inbox = () => {
             });
         }
     }, [messages, selectedUser]);
+
+    const handleTyping = (text: string) => {
+        setReplyText(text);
+        if (!user || !selectedUser) return;
+        
+        // Update typing status
+        setDoc(doc(db, COLLECTIONS.TYPING_STATUS, user.uid), { typingTo: selectedUser }, { merge: true });
+        
+        // Clear timeout
+        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+        
+        // Set new timeout to clear typing status
+        typingTimeoutRef.current = setTimeout(() => {
+            setDoc(doc(db, COLLECTIONS.TYPING_STATUS, user.uid), { typingTo: null }, { merge: true });
+        }, 2000);
+    };
 
     const handleSend = async () => {
         if (!user || !profile || !selectedUser || (!replyText.trim() && !pendingImage)) return;
@@ -134,6 +165,7 @@ export const Inbox = () => {
             });
             setReplyText('');
             setPendingImage(null);
+            setDoc(doc(db, COLLECTIONS.TYPING_STATUS, user.uid), { typingTo: null }, { merge: true });
         } catch (e) { console.error(e); }
     };
 
@@ -242,6 +274,15 @@ export const Inbox = () => {
                                     </div>
                                 );
                             })}
+                            {partnerTyping && (
+                                <div className="flex justify-start">
+                                    <div className="bg-gray-100 dark:bg-dark-surface rounded-2xl px-4 py-3 shadow-sm border border-gray-200 dark:border-dark-border rounded-bl-sm flex gap-1 items-center">
+                                        <span className="w-2 h-2 rounded-full bg-gray-400 animate-bounce"></span>
+                                        <span className="w-2 h-2 rounded-full bg-gray-400 animate-bounce" style={{animationDelay: '0.2s'}}></span>
+                                        <span className="w-2 h-2 rounded-full bg-gray-400 animate-bounce" style={{animationDelay: '0.4s'}}></span>
+                                    </div>
+                                </div>
+                            )}
                             <div ref={bottomRef} />
                         </div>
 
@@ -276,7 +317,7 @@ export const Inbox = () => {
                                 </label>
                                 <textarea 
                                     value={replyText}
-                                    onChange={e => setReplyText(e.target.value)}
+                                    onChange={e => handleTyping(e.target.value)}
                                     onPaste={(e) => {
                                         const items = e.clipboardData.items;
                                         for (let i = 0; i < items.length; i++) {

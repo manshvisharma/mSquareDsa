@@ -8,7 +8,7 @@ import { Trophy, Flame, User, MessageCircle, Heart, Lock, CheckCircle } from 'lu
 import { Link, useNavigate } from 'react-router-dom';
 
 export const Leaderboard = () => {
-    const { profile, user } = useAuth();
+    const { profile, user, refreshProfile } = useAuth();
     const [users, setUsers] = useState<UserProfile[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
@@ -111,6 +111,7 @@ export const Leaderboard = () => {
             const newFollowers = isFollowing ? followers.filter(id => id !== user.uid) : [...followers, user.uid];
             await setDoc(targetRef, { followers: newFollowers }, { merge: true });
         }
+        await refreshProfile();
         loadLeaderboard(); // refresh data
     };
 
