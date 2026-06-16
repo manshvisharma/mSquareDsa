@@ -115,7 +115,7 @@ export const Inbox = () => {
 
     useEffect(() => {
         if (!selectedUser) return;
-        const unsub = onSnapshot(doc(db, COLLECTIONS.TYPING_STATUS, selectedUser), (docSnap) => {
+        const unsub = onSnapshot(doc(db, COLLECTIONS.USERS, selectedUser), (docSnap) => {
             if (docSnap.exists() && docSnap.data()?.typingTo === user?.uid) {
                 setPartnerTyping(true);
             } else {
@@ -140,14 +140,14 @@ export const Inbox = () => {
         if (!user || !selectedUser) return;
         
         // Update typing status
-        setDoc(doc(db, COLLECTIONS.TYPING_STATUS, user.uid), { typingTo: selectedUser }, { merge: true });
+        setDoc(doc(db, COLLECTIONS.USERS, user.uid), { typingTo: selectedUser }, { merge: true });
         
         // Clear timeout
         if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
         
         // Set new timeout to clear typing status
         typingTimeoutRef.current = setTimeout(() => {
-            setDoc(doc(db, COLLECTIONS.TYPING_STATUS, user.uid), { typingTo: null }, { merge: true });
+            setDoc(doc(db, COLLECTIONS.USERS, user.uid), { typingTo: null }, { merge: true });
         }, 2000);
     };
 
@@ -165,7 +165,7 @@ export const Inbox = () => {
             });
             setReplyText('');
             setPendingImage(null);
-            setDoc(doc(db, COLLECTIONS.TYPING_STATUS, user.uid), { typingTo: null }, { merge: true });
+            setDoc(doc(db, COLLECTIONS.USERS, user.uid), { typingTo: null }, { merge: true });
         } catch (e) { console.error(e); }
     };
 

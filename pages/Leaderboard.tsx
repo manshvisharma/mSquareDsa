@@ -99,20 +99,15 @@ export const Leaderboard = () => {
 
         const newFollowing = isFollowing ? following.filter(id => id !== targetId) : [...following, targetId];
         
-        // Update current user
-        await setDoc(doc(db, COLLECTIONS.USERS, user.uid), { following: newFollowing }, { merge: true });
-        
-        // Update target user's followers list
-        const targetRef = doc(db, COLLECTIONS.USERS, targetId);
-        const targetDoc = await getDoc(targetRef);
-        if (targetDoc.exists()) {
-            const targetData = targetDoc.data() as UserProfile;
-            const followers = targetData.followers || [];
-            const newFollowers = isFollowing ? followers.filter(id => id !== user.uid) : [...followers, user.uid];
-            await setDoc(targetRef, { followers: newFollowers }, { merge: true });
+        try {
+            // Update current user
+            await setDoc(doc(db, COLLECTIONS.USERS, user.uid), { following: newFollowing }, { merge: true });
+            await refreshProfile();
+            loadLeaderboard(); // refresh data
+        } catch (err) {
+            console.error(err);
+            alert("Failed to update follow status.");
         }
-        await refreshProfile();
-        loadLeaderboard(); // refresh data
     };
 
     if (loading) {

@@ -26,22 +26,20 @@ export default function ProfileView() {
 
         const newFollowing = isFollowing ? following.filter(id => id !== targetId) : [...following, targetId];
         
-        // Update current user
-        await setDoc(doc(db, COLLECTIONS.USERS, user.uid), { following: newFollowing }, { merge: true });
-        
-        // Update target user's followers list
-        const targetRef = doc(db, COLLECTIONS.USERS, targetId);
-        const targetDoc = await getDoc(targetRef);
-        if (targetDoc.exists()) {
-            const targetData = targetDoc.data() as UserProfile;
-            const followers = targetData.followers || [];
-            const newFollowers = isFollowing ? followers.filter(id => id !== user.uid) : [...followers, user.uid];
-            await setDoc(targetRef, { followers: newFollowers }, { merge: true });
+        try {
+            // Update current user
+            await setDoc(doc(db, COLLECTIONS.USERS, user.uid), { following: newFollowing }, { merge: true });
             
             // update local profile to reflect changes without full reload
-            setProfile(prev => prev ? { ...prev, followers: newFollowers } : prev);
+            setProfile(prev => {
+                if (!prev) return prev;
+                const newFollowersList = isFollowing ? (prev.followers || []).filter(id => id !== user.uid) : [...(prev.followers || []), user.uid];
+                return { ...prev, followers: newFollowersList };
+            });
+            await refreshProfile();
+        } catch (err) {
+            console.error("Failed to toggle follow status", err);
         }
-        await refreshProfile();
     };
 
     useEffect(() => {
@@ -63,7 +61,13 @@ export default function ProfileView() {
                 });
                 
                 if (foundProfile) {
-                    const typedProfile = foundProfile as UserProfile;
+                    const followersCountFromAll = allUsers.filter(u => u.following?.includes(foundUid!)).length;
+                    
+                    const originalObj = foundProfile as UserProfile;
+                    const typedProfile = {
+                        ...originalObj,
+                        followers: Array.from({ length: followersCountFromAll }) as string[]
+                    } as UserProfile;
                     setProfile(typedProfile);
                     setProfileUid(foundUid);
                     
