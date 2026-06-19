@@ -84,6 +84,7 @@ export default function SQLAdminDashboard() {
   const openNewModal = () => {
     setEditingProblem({
       id: '',
+      problemNumber: 0,
       title: '',
       slug: '',
       difficulty: 'Easy',
@@ -141,6 +142,7 @@ export default function SQLAdminDashboard() {
          const problemId = doc(collection(db, COLLECTIONS.SQL_PROBLEMS)).id;
          const problem: SQLProblem = {
             id: problemId,
+            problemNumber: item.problemNumber || 0,
             title: item.title || 'Untitled',
             slug: finalSlug,
             difficulty: item.difficulty || 'Easy',
@@ -226,7 +228,10 @@ export default function SQLAdminDashboard() {
                 {problems.map(prob => (
                   <tr key={prob.id} className="hover:bg-gray-50 dark:hover:bg-dark-surface/50 transition-colors">
                     <td className="px-6 py-4">
-                      <div className="font-bold text-slate-800 dark:text-gray-200">{prob.title}</div>
+                      <div className="font-bold text-slate-800 dark:text-gray-200">
+                        <span className="text-gray-500 mr-2">{prob.problemNumber || 0}.</span>
+                        {prob.title}
+                      </div>
                       <div className="text-xs text-gray-500 dark:text-gray-400">/{prob.slug}</div>
                     </td>
                     <td className="px-6 py-4">
@@ -300,6 +305,10 @@ export default function SQLAdminDashboard() {
             <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
                 <form id="problemFrom" onSubmit={handleSave} className="space-y-6">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Problem Number (ID)</label>
+                            <input required type="number" value={editingProblem.problemNumber || 0} onChange={e => setEditingProblem({...editingProblem, problemNumber: parseInt(e.target.value) || 0})} className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-dark-border bg-white dark:bg-dark-surface dark:text-white focus:ring-2 focus:ring-primary-500" />
+                        </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Title</label>
                             <input required type="text" value={editingProblem.title} onChange={e => setEditingProblem({...editingProblem, title: e.target.value})} className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-dark-border bg-white dark:bg-dark-surface dark:text-white focus:ring-2 focus:ring-primary-500" />
@@ -445,7 +454,8 @@ export default function SQLAdminDashboard() {
                     <p className="text-sm text-gray-500 mb-3">Paste a JSON array of problem objects. All fields from the individual problem form are supported, including multi-testcase support with `sampleTestCases` and `hiddenTestCases`.</p>
                     <button onClick={() => setImportJson(JSON.stringify([
                         {
-                            "title": "1. Combine Two Tables",
+                            "problemNumber": 1,
+                            "title": "Combine Two Tables",
                             "slug": "combine-two-tables",
                             "difficulty": "Easy",
                             "category": "Joins",
@@ -466,7 +476,8 @@ export default function SQLAdminDashboard() {
                             "published": true
                         },
                         {
-                            "title": "2. Create Users Table",
+                            "problemNumber": 2,
+                            "title": "Create Users Table",
                             "slug": "create-users-table",
                             "difficulty": "Easy",
                             "category": "DDL",
@@ -489,7 +500,8 @@ export default function SQLAdminDashboard() {
                             "published": true
                         },
                         {
-                            "title": "3. High Earners",
+                            "problemNumber": 3,
+                            "title": "High Earners",
                             "slug": "find-high-earners",
                             "difficulty": "Easy",
                             "category": "Filtering",
@@ -512,7 +524,7 @@ export default function SQLAdminDashboard() {
                     <textarea 
                         rows={16} 
                         className="w-full p-4 rounded-xl border border-gray-300 dark:border-dark-border bg-slate-50 dark:bg-[#1e1e1e] dark:text-gray-300 font-mono text-xs focus:ring-2 focus:ring-primary-500"
-                        placeholder={`[\n  {\n    "title": "High Earners",\n    "slug": "high-earners",\n    "difficulty": "Easy",\n    ... \n    "sampleTestCases": ["CREATE TABLE ..."],\n    "hiddenTestCases": ["CREATE TABLE ..."],\n    "solutionQuery": "SELECT ..."\n  }\n]`}
+                        placeholder={`[\n  {\n    "problemNumber": 1,\n    "title": "High Earners",\n    "slug": "high-earners",\n    "difficulty": "Easy",\n    ... \n    "sampleTestCases": ["CREATE TABLE ..."],\n    "hiddenTestCases": ["CREATE TABLE ..."],\n    "solutionQuery": "SELECT ..."\n  }\n]`}
                         value={importJson}
                         onChange={(e) => setImportJson(e.target.value)}
                     />

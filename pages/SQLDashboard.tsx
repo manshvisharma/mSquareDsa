@@ -135,7 +135,7 @@ export default function SQLDashboard() {
                       </td>
                       <td className="px-6 py-4">
                         <Link to={`/sql/problem/${prob.slug}`} className="font-bold text-slate-800 dark:text-gray-200 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
-                            {prob.title}
+                            {prob.problemNumber ? `${prob.problemNumber}. ` : ''}{prob.title}
                         </Link>
                       </td>
                       <td className="px-6 py-4">

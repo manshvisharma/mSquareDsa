@@ -565,6 +565,9 @@ export default function SQLProblemView() {
             <div className="flex-1 overflow-y-auto p-6">
               {leftPanelTab === "description" && (
                 <>
+                  <h2 className="text-xl font-bold text-slate-800 dark:text-gray-100 mb-4 tracking-tight">
+                    {problem.problemNumber ? `${problem.problemNumber}. ` : ''}{problem.title}
+                  </h2>
                   <div className="flex flex-wrap items-center gap-3 mb-6">
                     <span
                       className={`px-2.5 py-1 rounded-md text-xs font-semibold tracking-wide ${getDifficultyClass()} bg-slate-50 dark:bg-[#2d2d2d]`}

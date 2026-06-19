@@ -123,6 +123,7 @@ export interface DailyActivity {
 // SQL Practice Types
 export interface SQLProblem {
   id: string; // Document ID
+  problemNumber: number;
   title: string;
   slug: string;
   difficulty: 'Easy' | 'Medium' | 'Hard';
