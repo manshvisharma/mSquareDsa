@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Editor } from "@monaco-editor/react";
 import { PGlite } from "@electric-sql/pglite";
 import { SQLProblem } from "../types";
 import { db, auth } from "../firebase";
 import { collection, query, where, getDocs, addDoc } from "firebase/firestore";
+import { useAuth } from "../App";
 import {
   ChevronLeft,
   Play,
@@ -42,6 +43,7 @@ interface TestCaseResult {
 export default function SQLProblemView() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
+  const { theme } = useAuth();
 
   const [problem, setProblem] = useState<SQLProblem | null>(null);
   const [loading, setLoading] = useState(true);
@@ -438,6 +440,28 @@ export default function SQLProblemView() {
     }
   };
 
+  const runQueryRef = useRef(runQuery);
+  useEffect(() => {
+    runQueryRef.current = runQuery;
+  });
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Cmd/Ctrl + '
+      if ((e.metaKey || e.ctrlKey) && e.key === "'") {
+        e.preventDefault();
+        runQueryRef.current(false);
+      }
+      // Cmd/Ctrl + Enter
+      else if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+        e.preventDefault();
+        runQueryRef.current(true);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
   if (loading) return <div className="p-8">Loading problem...</div>;
   if (!problem) return <div className="p-8">Problem not found.</div>;
 
@@ -482,6 +506,7 @@ export default function SQLProblemView() {
           <button
             onClick={() => runQuery(false)}
             disabled={dbLoading || isRunning}
+            title="Run Code (Cmd/Ctrl + ')"
             className="flex items-center gap-2 px-4 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-[#2d2d2d] dark:hover:bg-[#3d3d3d] text-slate-700 dark:text-slate-300 rounded-md text-sm font-medium transition-colors disabled:opacity-50 min-w-[90px] justify-center"
           >
             {dbLoading || (isRunning && !isSubmitting) ? (
@@ -494,6 +519,7 @@ export default function SQLProblemView() {
           <button
             onClick={() => runQuery(true)}
             disabled={dbLoading || isRunning}
+            title="Submit Code (Cmd/Ctrl + Enter)"
             className="flex items-center gap-2 px-4 py-1.5 bg-[#000000] hover:bg-slate-800 dark:bg-emerald-600 dark:hover:bg-emerald-700 text-white rounded-md text-sm font-medium transition-colors disabled:opacity-50 shadow-sm min-w-[110px] justify-center"
           >
             {isRunning && isSubmitting ? (
@@ -539,7 +565,7 @@ export default function SQLProblemView() {
             <div className="flex-1 overflow-y-auto p-6">
               {leftPanelTab === "description" && (
                 <>
-                  <div className="flex items-center gap-3 mb-6">
+                  <div className="flex flex-wrap items-center gap-3 mb-6">
                     <span
                       className={`px-2.5 py-1 rounded-md text-xs font-semibold tracking-wide ${getDifficultyClass()} bg-slate-50 dark:bg-[#2d2d2d]`}
                     >
@@ -551,6 +577,11 @@ export default function SQLProblemView() {
                         Solved
                       </span>
                     )}
+                    {(problem.tags || []).map(tag => (
+                      <span key={tag} className="px-2.5 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-800/30 rounded-md text-xs font-semibold">
+                        {tag}
+                      </span>
+                    ))}
                   </div>
                   <div className="prose prose-sm dark:prose-invert max-w-none prose-p:text-slate-600 dark:prose-p:text-gray-400 prose-headings:text-slate-800 dark:prose-headings:text-gray-200 prose-code:font-mono prose-code:text-slate-800 dark:prose-code:text-gray-300 prose-code:bg-slate-100 dark:prose-code:bg-[#2d2d2d] prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-md prose-code:before:content-none prose-code:after:content-none prose-pre:bg-slate-50 dark:prose-pre:bg-[#0a0a0a] prose-pre:border prose-pre:border-gray-200 dark:prose-pre:border-[#333]">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
@@ -625,6 +656,9 @@ export default function SQLProblemView() {
                           </h2>
                           <p className="text-sm text-emerald-600/80 dark:text-emerald-400/80 text-center">
                             Your query passed all test cases.
+                          </p>
+                          <p className="text-xs font-medium text-emerald-700/60 dark:text-emerald-400/60 mt-3 text-center">
+                            {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} at {new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
                           </p>
                         </div>
                       ) : (
@@ -712,7 +746,7 @@ export default function SQLProblemView() {
                   <Editor
                     height="100%"
                     defaultLanguage="sql"
-                    theme="vs-dark"
+                    theme={theme === 'dark' ? "vs-dark" : "light"}
                     value={queryCode}
                     onChange={(val) => setQueryCode(val || "")}
                     options={{

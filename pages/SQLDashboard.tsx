@@ -15,6 +15,7 @@ export default function SQLDashboard() {
   
   const [searchTerm, setSearchTerm] = useState('');
   const [difficultyFilter, setDifficultyFilter] = useState('All');
+  const [tagFilter, setTagFilter] = useState('All');
   const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
@@ -50,11 +51,14 @@ export default function SQLDashboard() {
 
   const solvedProblemIds = new Set(submissions.filter(s => s.status === 'Accepted').map(s => s.problemId));
 
+  const allTags = Array.from(new Set(problems.flatMap(p => p.tags || []))).sort();
+
   const filteredProblems = problems.filter(p => {
     const safeTags = p.tags || [];
     const matchesSearch = p.title.toLowerCase().includes(searchTerm.toLowerCase()) || safeTags.some(t => t.toLowerCase().includes(searchTerm.toLowerCase()));
     const matchesDiff = difficultyFilter === 'All' || p.difficulty === difficultyFilter;
-    return matchesSearch && matchesDiff;
+    const matchesTag = tagFilter === 'All' || safeTags.includes(tagFilter);
+    return matchesSearch && matchesDiff && matchesTag;
   });
 
   return (
@@ -84,6 +88,16 @@ export default function SQLDashboard() {
              <option value="Easy">Easy</option>
              <option value="Medium">Medium</option>
              <option value="Hard">Hard</option>
+         </select>
+         <select 
+             value={tagFilter}
+             onChange={e => setTagFilter(e.target.value)}
+             className="px-4 py-2 bg-white dark:bg-dark-card border border-gray-200 dark:border-dark-border rounded-xl focus:ring-2 focus:ring-primary-500 text-slate-700 dark:text-white shadow-sm"
+         >
+             <option value="All">All Tags</option>
+             {allTags.map(tag => (
+                 <option key={tag} value={tag}>{tag}</option>
+             ))}
          </select>
       </div>
 
@@ -133,8 +147,14 @@ export default function SQLDashboard() {
                               {prob.difficulty}
                           </span>
                       </td>
-                      <td className="px-6 py-4 text-xs font-medium text-slate-500">
-                          {(prob.tags || []).join(', ')}
+                      <td className="px-6 py-4">
+                          <div className="flex flex-wrap gap-1.5">
+                              {(prob.tags || []).map(tag => (
+                                  <span key={tag} className="px-2 py-0.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-800/30 rounded-md text-[10px] font-semibold whitespace-nowrap">
+                                      {tag}
+                                  </span>
+                              ))}
+                          </div>
                       </td>
                       <td className="px-6 py-4">
                           <span className="text-xs font-bold px-2 py-1 bg-gray-100 dark:bg-dark-surface rounded text-slate-600 dark:text-slate-400">{prob.databaseType}</span>
