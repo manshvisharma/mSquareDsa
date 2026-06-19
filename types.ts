@@ -119,3 +119,47 @@ export interface DailyActivity {
   date: string;
   count: number;
 }
+
+// SQL Practice Types
+export interface SQLProblem {
+  id: string; // Document ID
+  title: string;
+  slug: string;
+  difficulty: 'Easy' | 'Medium' | 'Hard';
+  category: string;
+  tags: string[];
+  description: string;
+  constraints: string[];
+  notes: string;
+  hints: string[];
+  databaseType: 'PostgreSQL' | 'MySQL';
+  visibleSetupSql: string;
+  sampleTestCases?: string[]; // Array of setup scripts for sample cases
+  starterQuery: string;
+  sampleExplanation: string;
+  expectedOutput: any[]; // Default Expected JSON rows result
+  solutionQuery: string; // The correct query, used for dynamic test cases evaluations
+  validationQuery?: string; // Query to run after user/solution query to extract results (useful for DDL/DML exercises)
+  hiddenSetupSql?: string; // Optional hidden test cases schema and inserts
+  hiddenTestCases?: string[]; // Array of setup scripts for hidden cases
+  testCases?: {
+      id: string;
+      setupSql: string; // Additional or overriding SQL to run before query
+      expectedOutput: any[]; // Expected rows for this testcase
+      isHidden: boolean;
+  }[];
+  createdAt: number;
+  updatedAt: number;
+  published: boolean;
+  order?: number;
+}
+
+export interface SQLSubmission {
+  id: string;
+  userId: string;
+  problemId: string;
+  query: string;
+  status: 'Accepted' | 'Wrong Answer' | 'Error';
+  executionTimeMs: number;
+  timestamp: number;
+}

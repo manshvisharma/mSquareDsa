@@ -1,7 +1,7 @@
 import React, { ReactNode, useEffect, useState } from 'react';
 import { useAuth } from '../App';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { LogOut, Menu, X, LayoutDashboard, Database, User, Moon, Sun, Repeat, Search as SearchIcon, Trophy, MessageCircle } from 'lucide-react';
+import { LogOut, Menu, X, LayoutDashboard, Database, User, Moon, Sun, Repeat, Search as SearchIcon, Trophy, MessageCircle, TerminalSquare } from 'lucide-react';
 import { db, auth } from '../firebase';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { COLLECTIONS } from '../constants';
@@ -233,6 +233,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
           <div className="flex-1 overflow-y-auto py-6 px-3 space-y-2">
             <NavItem to="/" icon={LayoutDashboard} label="Dashboard" />
             <NavItem to="/revision" icon={Repeat} label="Revision" badge={pendingRevisionsCount} />
+            <NavItem to="/sql" icon={TerminalSquare} label="SQL Practice" />
             <NavItem to="/leaderboard" icon={Trophy} label="Rankings" />
             <NavItem to="/inbox" icon={MessageCircle} label="Inbox" badge={unreadCount} isBadgeDot={true} />
             
@@ -240,6 +241,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
               <>
                 <div className="pt-6 pb-2 px-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Admin</div>
                 <NavItem to="/admin" icon={Database} label="Manage Content" />
+                <NavItem to="/admin/sql" icon={TerminalSquare} label="SQL Problems" />
                 <NavItem to="/admin/users" icon={User} label="User Oversight" />
               </>
             )}
@@ -281,8 +283,8 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       )}
 
       {/* Main Content */}
-      <main className="flex-1 min-w-0 overflow-y-auto pt-16 scroll-smooth">
-        <div className="max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-10">
+      <main className={`flex-1 min-w-0 scroll-smooth flex flex-col pt-16 ${location.pathname.includes('/sql/problem/') ? 'h-screen overflow-hidden' : 'overflow-y-auto min-h-screen'}`}>
+        <div className={`w-full ${location.pathname.includes('/sql/problem/') ? 'flex-1 overflow-hidden' : 'max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-10'}`}>
           {children}
         </div>
       </main>

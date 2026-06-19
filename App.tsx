@@ -16,6 +16,9 @@ import RevisionDashboard from './pages/RevisionDashboard';
 import { Leaderboard } from './pages/Leaderboard';
 import { Inbox } from './pages/Inbox';
 import ProfileView from './pages/ProfileView';
+import SQLDashboard from './pages/SQLDashboard';
+import SQLProblemView from './pages/SQLProblemView';
+import SQLAdminDashboard from './pages/SQLAdminDashboard';
 
 // --- Auth Context ---
 
@@ -183,6 +186,7 @@ export default function App() {
           
           {/* Admin Routes */}
           <Route path="/admin/users" element={<RequireAuth><RequireAdmin><Layout><UserOversight /></Layout></RequireAdmin></RequireAuth>} />
+          <Route path="/admin/sql" element={<RequireAuth><RequireAdmin><Layout><SQLAdminDashboard /></Layout></RequireAdmin></RequireAuth>} />
           <Route path="/admin" element={<RequireAuth><RequireAdmin><Layout><AdminDashboard /></Layout></RequireAdmin></RequireAuth>} />
 
           {/* User Routes */}
@@ -192,6 +196,8 @@ export default function App() {
           <Route path="/revision" element={<RequireAuth><Layout><RevisionDashboard /></Layout></RequireAuth>} />
           <Route path="/leaderboard" element={<RequireAuth><Layout><Leaderboard /></Layout></RequireAuth>} />
           <Route path="/inbox" element={<RequireAuth><Layout><Inbox /></Layout></RequireAuth>} />
+          <Route path="/sql/problem/:slug" element={<RequireAuth><Layout><SQLProblemView /></Layout></RequireAuth>} />
+          <Route path="/sql" element={<RequireAuth><Layout><SQLDashboard /></Layout></RequireAuth>} />
           <Route path="/" element={<RequireAuth><Layout><UserDashboard /></Layout></RequireAuth>} />
         </Routes>
       </Router>

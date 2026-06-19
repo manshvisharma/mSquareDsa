@@ -18,7 +18,10 @@ export const COLLECTIONS = {
   PROBLEMS: 'problems',
   DELETED: 'recycleBin',
   MESSAGES: 'messages',
-  TYPING_STATUS: 'typingStatus'
+  TYPING_STATUS: 'typingStatus',
+  SQL_PROBLEMS: 'sqlProblems',
+  SQL_SUBMISSIONS: 'sqlSubmissions',
+  SQL_DRAFTS: 'sqlDrafts'
 };
 
 export const ADMIN_EMAILS = [
