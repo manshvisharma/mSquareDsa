@@ -5,7 +5,7 @@ import { COLLECTIONS } from '../constants';
 import { SQLProblem, SQLSubmission } from '../types';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../App';
-import { Search as SearchIcon, Filter, CheckCircle2, Circle } from 'lucide-react';
+import { Search as SearchIcon, Filter, CheckCircle2, Circle, ArrowRight } from 'lucide-react';
 
 export default function SQLDashboard() {
   const { user } = useAuth();
@@ -17,18 +17,27 @@ export default function SQLDashboard() {
   const [difficultyFilter, setDifficultyFilter] = useState('All');
   const [tagFilter, setTagFilter] = useState('All');
   const [errorMsg, setErrorMsg] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const PROBLEMS_PER_PAGE = 15;
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, difficultyFilter, tagFilter]);
+
+  // Global cache variable to speed up navigation
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       setErrorMsg('');
       try {
-          // Fetch published problems
-          const q = query(collection(db, COLLECTIONS.SQL_PROBLEMS), where('published', '==', true));
-          const snap = await getDocs(q);
-          const loaded = snap.docs.map(d => d.data() as SQLProblem);
+          let loaded = (window as any).__SQL_PROBLEMS_CACHE__;
+          if (!loaded) {
+            const q = query(collection(db, COLLECTIONS.SQL_PROBLEMS), where('published', '==', true));
+            const snap = await getDocs(q);
+            loaded = snap.docs.map(d => d.data() as SQLProblem);
+            (window as any).__SQL_PROBLEMS_CACHE__ = loaded;
+          }
           
-          // Fetch user submissions for these problems
           if (user) {
              const subQ = query(collection(db, COLLECTIONS.SQL_SUBMISSIONS), where('userId', '==', user.uid));
              const subSnap = await getDocs(subQ);
@@ -55,17 +64,55 @@ export default function SQLDashboard() {
 
   const filteredProblems = problems.filter(p => {
     const safeTags = p.tags || [];
-    const matchesSearch = p.title.toLowerCase().includes(searchTerm.toLowerCase()) || safeTags.some(t => t.toLowerCase().includes(searchTerm.toLowerCase()));
+    const searchLower = searchTerm.toLowerCase().trim();
+    let matchesSearch = false;
+    
+    if (/^\d+$/.test(searchLower)) {
+      matchesSearch = p.problemNumber?.toString() === searchLower;
+    } else {
+      matchesSearch = p.title.toLowerCase().includes(searchLower) || safeTags.some(t => t.toLowerCase().includes(searchLower));
+    }
+
     const matchesDiff = difficultyFilter === 'All' || p.difficulty === difficultyFilter;
     const matchesTag = tagFilter === 'All' || safeTags.includes(tagFilter);
     return matchesSearch && matchesDiff && matchesTag;
-  });
+  }).sort((a, b) => (a.problemNumber || 0) - (b.problemNumber || 0));
+
+  const paginatedProblems = filteredProblems.slice((currentPage - 1) * PROBLEMS_PER_PAGE, currentPage * PROBLEMS_PER_PAGE);
+  const totalPages = Math.ceil(filteredProblems.length / PROBLEMS_PER_PAGE);
+
+  const lastSolvedProblemId = submissions.length > 0 
+    ? [...submissions].sort((a, b) => b.timestamp - a.timestamp).find(s => s.status === 'Accepted')?.problemId
+    : null;
+  const lastSolvedProblem = lastSolvedProblemId ? problems.find(p => p.id === lastSolvedProblemId) : null;
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-extrabold text-slate-800 dark:text-white mt-4">SQL Practice Environment</h1>
-        <p className="text-slate-500 dark:text-slate-400 mt-2">Master SQL with interactive challenges in your browser.</p>
+      <div className="flex flex-col md:flex-row justify-between md:items-center gap-4 mt-4">
+        <div>
+          <h1 className="text-3xl font-extrabold text-slate-800 dark:text-white">SQL Practice Environment</h1>
+          <p className="text-slate-500 dark:text-slate-400 mt-2">Master SQL with interactive challenges in your browser.</p>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+          {lastSolvedProblem && (
+            <Link to={`/sql/problem/${lastSolvedProblem.slug}`} className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl font-medium transition-colors shadow-sm flex items-center gap-2">
+               Resume <ArrowRight size={16} />
+            </Link>
+          )}
+          
+          <div className="flex items-center gap-3 bg-white dark:bg-dark-card border border-gray-200 dark:border-dark-border px-4 py-2 rounded-xl shadow-sm">
+            <div className="relative w-10 h-10 pointer-events-none">
+               <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                    <circle cx="50" cy="50" r="40" stroke="currentColor" strokeWidth="12" fill="transparent" className="text-gray-100 dark:text-slate-800" />
+                    <circle cx="50" cy="50" r="40" stroke="currentColor" strokeWidth="12" fill="transparent" strokeDasharray="251.2" strokeDashoffset={251.2 - (251.2 * (problems.length > 0 ? solvedProblemIds.size / problems.length : 0))} className="text-indigo-500 transition-all duration-1000 ease-out" />
+               </svg>
+            </div>
+            <div className="flex flex-col">
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Progress</span>
+                <span className="text-sm font-black text-slate-800 dark:text-white leading-none mt-0.5">{solvedProblemIds.size} <span className="text-gray-400 font-medium">/ {problems.length}</span></span>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="flex flex-col sm:flex-row gap-4 mb-6">
@@ -122,7 +169,7 @@ export default function SQLDashboard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-dark-border">
-                {filteredProblems.map(prob => {
+                {paginatedProblems.map(prob => {
                   const isSolved = solvedProblemIds.has(prob.id);
                   return (
                     <tr key={prob.id} className="hover:bg-gray-50 dark:hover:bg-dark-surface/50 transition-colors group">
@@ -162,12 +209,35 @@ export default function SQLDashboard() {
                     </tr>
                   );
                 })}
-                {filteredProblems.length === 0 && (
+                {paginatedProblems.length === 0 && (
                     <tr><td colSpan={5} className="p-8 text-center text-gray-500">No SQL problems match your criteria.</td></tr>
                 )}
               </tbody>
             </table>
           </div>
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 dark:border-dark-border bg-gray-50 dark:bg-dark-surface/50">
+              <span className="text-sm text-slate-500 dark:text-gray-400">
+                Showing {((currentPage - 1) * PROBLEMS_PER_PAGE) + 1} to {Math.min(currentPage * PROBLEMS_PER_PAGE, filteredProblems.length)} of {filteredProblems.length} results
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="px-3 py-1 bg-white dark:bg-dark-card border border-gray-200 dark:border-dark-border rounded hover:bg-gray-50 dark:hover:bg-dark-surface disabled:opacity-50 text-slate-700 dark:text-gray-300 transition-colors"
+                >
+                  Previous
+                </button>
+                <button
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="px-3 py-1 bg-white dark:bg-dark-card border border-gray-200 dark:border-dark-border rounded hover:bg-gray-50 dark:hover:bg-dark-surface disabled:opacity-50 text-slate-700 dark:text-gray-300 transition-colors"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

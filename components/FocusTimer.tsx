@@ -1,53 +1,110 @@
 import React, { useState, useEffect } from "react";
-import { Timer, Play, Pause, RotateCcw, X, Target } from "lucide-react";
+import { Timer, Play, Pause, RotateCcw, X, Target, Clock, Settings2 } from "lucide-react";
 
 export const FocusTimer = ({ inline }: { inline?: boolean }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(25 * 60); // 25 minutes default
+  const [mode, setMode] = useState<"stopwatch" | "timer">("stopwatch");
+  const [time, setTime] = useState(0); // current time in seconds
+  const [timerDuration, setTimerDuration] = useState(25 * 60);
   const [isRunning, setIsRunning] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editMinutes, setEditMinutes] = useState("25");
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
-    if (isRunning && timeLeft > 0) {
+    if (isRunning) {
       interval = setInterval(() => {
-        setTimeLeft((prev) => prev - 1);
+        setTime((prev) => {
+          if (mode === "stopwatch") {
+            return prev + 1;
+          } else {
+            if (prev <= 1) {
+              setIsRunning(false);
+              const audio = new Audio("https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3");
+              audio.play().catch((e) => console.log("Audio play failed:", e));
+              return 0;
+            }
+            return prev - 1;
+          }
+        });
       }, 1000);
-    } else if (timeLeft === 0) {
-      setIsRunning(false);
-      // Play notification sound
-      const audio = new Audio(
-        "https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3",
-      );
-      audio.play().catch((e) => console.log("Audio play failed:", e));
     }
     return () => clearInterval(interval);
-  }, [isRunning, timeLeft]);
+  }, [isRunning, mode]);
+
+  useEffect(() => {
+    if (mode === "timer" && !isRunning) {
+      setTime(timerDuration);
+    } else if (mode === "stopwatch" && !isRunning && time === 0) {
+      setTime(0);
+    }
+  }, [mode, timerDuration]);
 
   const formatTime = (seconds: number) => {
-    const m = Math.floor(seconds / 60);
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
     const s = seconds % 60;
+    if (h > 0) {
+      return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+    }
     return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
   };
 
   const handleReset = () => {
     setIsRunning(false);
-    setTimeLeft(25 * 60);
+    setTime(mode === "timer" ? timerDuration : 0);
+  };
+
+  const toggleMode = () => {
+    setIsRunning(false);
+    setMode(prev => prev === "timer" ? "stopwatch" : "timer");
+    setTime(mode === "stopwatch" ? timerDuration : 0); // Next mode logic
+  };
+
+  const handleEditSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const mins = parseInt(editMinutes);
+    if (!isNaN(mins) && mins > 0) {
+      setTimerDuration(mins * 60);
+      setTime(mins * 60);
+      setMode("timer");
+    }
+    setIsEditing(false);
   };
 
   if (inline) {
     return (
       <div className="flex items-center gap-2 bg-slate-100 dark:bg-[#2d2d2d] rounded-md px-3 py-1.5 border border-gray-200 dark:border-[#333]">
-        <Timer
-          size={14}
-          className={
-            isRunning ? "animate-pulse text-emerald-500" : "text-slate-500"
-          }
-        />
-        <span
-          className={`font-mono text-xs font-semibold ${timeLeft < 60 ? "text-red-500 animate-pulse" : "text-slate-700 dark:text-gray-300"}`}
-        >
-          {formatTime(timeLeft)}
-        </span>
+        <button onClick={toggleMode} title={`Switch to ${mode === 'timer' ? 'Stopwatch' : 'Timer'}`} className="hover:bg-slate-200 dark:hover:bg-[#3d3d3d] p-0.5 rounded">
+          {mode === "timer" ? (
+            <Timer size={14} className={isRunning ? "animate-pulse text-emerald-500" : "text-slate-500"} />
+          ) : (
+            <Clock size={14} className={isRunning ? "animate-pulse text-blue-500" : "text-slate-500"} />
+          )}
+        </button>
+
+        {isEditing ? (
+          <form onSubmit={handleEditSubmit} className="flex items-center">
+            <input 
+              type="number" 
+              value={editMinutes} 
+              onChange={e => setEditMinutes(e.target.value)} 
+              className="w-10 h-5 px-1 text-xs font-mono bg-white dark:bg-[#1a1a1a] border border-gray-300 dark:border-[#444] rounded outline-none" 
+              autoFocus 
+              onBlur={handleEditSubmit}
+            />
+            <span className="text-[10px] ml-1 text-slate-500">m</span>
+          </form>
+        ) : (
+          <span
+            onClick={() => { setIsRunning(false); setIsEditing(true); setEditMinutes(Math.floor(timerDuration/60).toString()); }}
+            className={`font-mono text-xs font-semibold cursor-pointer hover:underline ${mode === "timer" && time < 60 ? "text-red-500 animate-pulse" : "text-slate-700 dark:text-gray-300"}`}
+            title="Click to set timer"
+          >
+            {formatTime(time)}
+          </span>
+        )}
+
         <button
           onClick={() => setIsRunning(!isRunning)}
           className="text-slate-500 hover:text-slate-700 dark:text-gray-400 dark:hover:text-white transition-colors ml-1"
@@ -56,6 +113,7 @@ export const FocusTimer = ({ inline }: { inline?: boolean }) => {
         </button>
         <button
           onClick={handleReset}
+          title="Reset"
           className="text-slate-500 hover:text-slate-700 dark:text-gray-400 dark:hover:text-white transition-colors"
         >
           <RotateCcw size={14} />
@@ -77,7 +135,7 @@ export const FocusTimer = ({ inline }: { inline?: boolean }) => {
         />
         {isRunning && (
           <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full ring-2 ring-white dark:ring-dark-bg">
-            {formatTime(timeLeft)}
+            {formatTime(time)}
           </span>
         )}
       </button>
@@ -99,9 +157,9 @@ export const FocusTimer = ({ inline }: { inline?: boolean }) => {
       </div>
       <div className="p-6 text-center">
         <div
-          className={`text-5xl font-black mb-6 tracking-tight font-mono ${timeLeft < 60 ? "text-red-500 animate-pulse" : "text-slate-800 dark:text-white"}`}
+          className={`text-5xl font-black mb-6 tracking-tight font-mono ${mode === "timer" && time < 60 ? "text-red-500 animate-pulse" : "text-slate-800 dark:text-white"}`}
         >
-          {formatTime(timeLeft)}
+          {formatTime(time)}
         </div>
 
         <div className="flex justify-center gap-4">
@@ -127,7 +185,9 @@ export const FocusTimer = ({ inline }: { inline?: boolean }) => {
       <div className="bg-gray-50 dark:bg-dark-surface/50 p-3 flex justify-around text-xs font-bold text-gray-500 dark:text-gray-400 border-t border-gray-100 dark:border-dark-border">
         <button
           onClick={() => {
-            setTimeLeft(15 * 60);
+            setTimerDuration(15 * 60);
+            setTime(15 * 60);
+            setMode("timer");
             setIsRunning(false);
           }}
           className="hover:text-primary-600 transition-colors"
@@ -136,7 +196,9 @@ export const FocusTimer = ({ inline }: { inline?: boolean }) => {
         </button>
         <button
           onClick={() => {
-            setTimeLeft(25 * 60);
+            setTimerDuration(25 * 60);
+            setTime(25 * 60);
+            setMode("timer");
             setIsRunning(false);
           }}
           className="hover:text-primary-600 transition-colors"
@@ -145,12 +207,24 @@ export const FocusTimer = ({ inline }: { inline?: boolean }) => {
         </button>
         <button
           onClick={() => {
-            setTimeLeft(50 * 60);
+            setTimerDuration(50 * 60);
+            setTime(50 * 60);
+            setMode("timer");
             setIsRunning(false);
           }}
           className="hover:text-primary-600 transition-colors"
         >
           50m
+        </button>
+        <button
+          onClick={() => {
+            setMode("stopwatch");
+            setTime(0);
+            setIsRunning(false);
+          }}
+          className="hover:text-amber-600 transition-colors flex items-center gap-1"
+        >
+          <Clock size={12} /> Stopwatch
         </button>
       </div>
     </div>

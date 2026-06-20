@@ -16,6 +16,9 @@ import {
   Send,
   Plus,
   Trash2,
+  ChevronRight,
+  List,
+  Search,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -73,6 +76,57 @@ export default function SQLProblemView() {
     { tableName: string; fields: string[]; rows: any[] }[] | null
   >(null);
   const [schemaError, setSchemaError] = useState<string | null>(null);
+
+  const [allProblems, setAllProblems] = useState<SQLProblem[]>([]);
+  const [solvedProblemIds, setSolvedProblemIds] = useState<Set<string>>(new Set());
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [dropdownSearch, setDropdownSearch] = useState("");
+
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const fetchDropdownData = async () => {
+      try {
+        let problemsData = (window as any).__SQL_PROBLEMS_CACHE__;
+        if (!problemsData) {
+          const pQuery = query(collection(db, "sqlProblems"), where("published", "==", true));
+          const pSnap = await getDocs(pQuery);
+          problemsData = pSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as SQLProblem));
+          (window as any).__SQL_PROBLEMS_CACHE__ = problemsData;
+        }
+        
+        problemsData.sort((a: any, b: any) => (a.problemNumber || 0) - (b.problemNumber || 0));
+        setAllProblems(problemsData);
+
+        if (auth.currentUser) {
+          const sQuery = query(
+            collection(db, "sqlSubmissions"),
+            where("userId", "==", auth.currentUser.uid),
+            where("status", "==", "Accepted")
+          );
+          const sSnap = await getDocs(sQuery);
+          setSolvedProblemIds(new Set(sSnap.docs.map(doc => doc.data().problemId)));
+        }
+      } catch (e) {
+        console.error("Error fetching dropdown data", e);
+      }
+    };
+    fetchDropdownData();
+  }, [auth.currentUser]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    };
+    if (isDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isDropdownOpen]);
 
   useEffect(() => {
     const fetchInputTables = async () => {
@@ -430,6 +484,12 @@ export default function SQLProblemView() {
         });
         if (finalVerdict === "Accepted") {
           setIsSolved(true);
+          try {
+             const { toggleProblem } = await import("../services/dataService");
+             await toggleProblem(auth.currentUser.uid, problem.id, true);
+          } catch(err) {
+             console.error("Failed to update global stats", err);
+          }
           import("canvas-confetti").then((confetti) => confetti.default());
         }
       }
@@ -462,6 +522,13 @@ export default function SQLProblemView() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  const [dropdownLimit, setDropdownLimit] = useState(12);
+
+  // Reset limit when search changing
+  useEffect(() => {
+    setDropdownLimit(12);
+  }, [dropdownSearch, isDropdownOpen]);
+
   if (loading) return <div className="p-8">Loading problem...</div>;
   if (!problem) return <div className="p-8">Problem not found.</div>;
 
@@ -479,21 +546,137 @@ export default function SQLProblemView() {
 
   const activeResult = runResults[activeTestCaseIdx];
 
+  const currentProblemIndex = allProblems.findIndex(p => p.slug === slug);
+  const prevProblem = currentProblemIndex > 0 ? allProblems[currentProblemIndex - 1] : null;
+  const nextProblem = currentProblemIndex < allProblems.length - 1 ? allProblems[currentProblemIndex + 1] : null;
+
+  const searchLower = dropdownSearch.toLowerCase().trim();
+  
+  let baseDropdownProblems = allProblems;
+  if (!searchLower && currentProblemIndex >= 0) {
+    baseDropdownProblems = allProblems.slice(currentProblemIndex);
+  } else if (searchLower) {
+    baseDropdownProblems = allProblems.filter(p => {
+      if (/^\d+$/.test(searchLower)) {
+         return p.problemNumber?.toString() === searchLower;
+      }
+      return p.title.toLowerCase().includes(searchLower);
+    });
+  }
+
+  const displayDropdownProblems = baseDropdownProblems.slice(0, dropdownLimit);
+  const hasMoreDropdown = dropdownLimit < baseDropdownProblems.length;
+
+  const handleDropdownScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const bottom = Math.abs(e.currentTarget.scrollHeight - e.currentTarget.scrollTop - e.currentTarget.clientHeight) < 10;
+    if (bottom && hasMoreDropdown) {
+      setDropdownLimit(prev => prev + 5);
+    }
+  };
+
   return (
     <div className="h-full flex flex-col font-sans bg-[#F0F0F0] dark:bg-[#121212]">
-      <div className="flex items-center justify-between px-4 h-12 bg-white dark:bg-[#1e1e1e] border-b border-gray-200 dark:border-[#333] shrink-0 shadow-sm z-10">
-        <div className="flex items-center gap-4">
+      <div className="flex items-center justify-between px-4 h-12 bg-white dark:bg-[#1e1e1e] border-b border-gray-200 dark:border-[#333] shrink-0 shadow-sm z-10 relative">
+        <div className="flex items-center gap-6">
           <button
             onClick={() => navigate("/sql")}
-            className="text-gray-500 hover:text-gray-900 dark:hover:text-gray-300 transition-colors"
+            className="flex items-center gap-1 text-gray-500 hover:text-gray-900 dark:hover:text-gray-300 transition-colors font-medium text-sm group shrink-0 w-32"
           >
-            <ChevronLeft size={18} />
+            <ChevronLeft size={16} className="group-hover:-translate-x-0.5 transition-transform" /> Problem List
           </button>
-          <h1 className="font-semibold text-sm text-slate-800 dark:text-gray-200 tracking-tight">
-            {problem.title}
-          </h1>
+
+          <div className="flex items-center bg-slate-100 dark:bg-[#2d2d2d] rounded-md border border-gray-200 dark:border-[#333] p-0.5 relative z-50">
+            <button 
+              title="Previous Problem"
+              onClick={() => prevProblem && navigate(`/sql/problem/${prevProblem.slug}`)}
+              disabled={!prevProblem}
+              className="p-1 text-slate-500 hover:text-slate-800 disabled:opacity-30 dark:text-gray-400 dark:hover:text-white transition-colors"
+            >
+              <ChevronLeft size={16} />
+            </button>
+
+            <div className="relative" ref={dropdownRef}>
+              <button 
+                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                className="flex items-center gap-2 px-3 py-1 text-sm font-semibold tracking-tight text-slate-800 dark:text-gray-200 hover:bg-slate-200 dark:hover:bg-[#3d3d3d] rounded transition-colors"
+              >
+                <List size={14} />
+                <span className="max-w-[300px] truncate">
+                  {problem.problemNumber ? `${problem.problemNumber}. ` : ''}{problem.title}
+                </span>
+              </button>
+
+              {isDropdownOpen && (
+                <div className="absolute top-10 left-0 w-[400px] bg-white dark:bg-[#1e1e1e] shadow-2xl border border-gray-200 dark:border-[#333] rounded-xl flex flex-col z-50 overflow-hidden text-sm">
+                  <div className="p-2 border-b border-gray-100 dark:border-[#333]">
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
+                      <input 
+                        type="text"
+                        autoFocus
+                        placeholder="Search problems..."
+                        value={dropdownSearch}
+                        onChange={e => setDropdownSearch(e.target.value)}
+                        className="w-full bg-slate-50 dark:bg-[#2d2d2d] border border-gray-200 dark:border-[#444] rounded-md text-slate-700 dark:text-gray-200 px-8 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                      />
+                    </div>
+                  </div>
+                  <div className="max-h-80 overflow-y-auto custom-scrollbar" onScroll={handleDropdownScroll}>
+                    {displayDropdownProblems.map(p => {
+                      const isCurrent = p.slug === slug;
+                      const pSolved = solvedProblemIds.has(p.id);
+                      let diffColor = "text-emerald-500";
+                      if (p.difficulty === "Medium") diffColor = "text-amber-500";
+                      if (p.difficulty === "Hard") diffColor = "text-red-500";
+                      return (
+                        <button
+                          key={p.id}
+                          onClick={() => {
+                            navigate(`/sql/problem/${p.slug}`);
+                            setIsDropdownOpen(false);
+                          }}
+                          className={`w-full text-left px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-[#252525] flex items-center justify-between transition-colors ${isCurrent ? "bg-slate-100 dark:bg-[#2d2d2d] text-primary-600 dark:text-primary-400 font-semibold" : "text-slate-700 dark:text-gray-300"}`}
+                        >
+                          <div className="truncate flex-1 pr-4">
+                            {p.problemNumber ? `${p.problemNumber}. ` : ''}{p.title}
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <span className={`text-[10px] uppercase tracking-wider font-bold ${diffColor}`}>{p.difficulty}</span>
+                            {pSolved && <CheckCircle2 size={16} className="text-emerald-500" />}
+                          </div>
+                        </button>
+                      );
+                    })}
+                    {hasMoreDropdown && (
+                      <div className="p-3 text-center">
+                        <button 
+                          onClick={() => setDropdownLimit(prev => prev + 5)}
+                          className="text-xs text-primary-600 font-semibold hover:underline"
+                        >
+                          Load more...
+                        </button>
+                      </div>
+                    )}
+                    {displayDropdownProblems.length === 0 && (
+                      <div className="p-4 text-center text-slate-500 italic">No problems found.</div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <button 
+              title="Next Problem"
+              onClick={() => nextProblem && navigate(`/sql/problem/${nextProblem.slug}`)}
+              disabled={!nextProblem}
+              className="p-1 text-slate-500 hover:text-slate-800 disabled:opacity-30 dark:text-gray-400 dark:hover:text-white transition-colors"
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
         </div>
-        <div className="flex gap-3 items-center">
+
+        <div className="flex gap-3 items-center w-1/3 justify-end">
           <FocusTimer inline={true} />
           {runningProgress && (
             <div className="flex items-center gap-2 text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-3 py-1.5 rounded-md mr-1">

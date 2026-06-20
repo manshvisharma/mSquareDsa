@@ -164,13 +164,11 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   return (
     <div className="min-h-screen flex bg-gray-50 dark:bg-dark-surface text-slate-900 dark:text-slate-100 transition-colors duration-200">
-      {/* Animated Background for Glass Theme */}
+      {/* Glass Theme Background */}
       {uiStyle === "glass" && (
-        <div className="fixed inset-0 overflow-hidden pointer-events-none z-[0]">
-          <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-500/10 dark:bg-blue-500/20 rounded-full blur-[100px] animate-blob"></div>
-          <div className="absolute top-[20%] right-[-10%] w-[35%] h-[35%] bg-purple-500/10 dark:bg-purple-500/20 rounded-full blur-[100px] animate-blob animation-delay-2000"></div>
-          <div className="absolute bottom-[-10%] left-[20%] w-[40%] h-[40%] bg-emerald-500/10 dark:bg-emerald-500/20 rounded-full blur-[80px] animate-blob animation-delay-4000"></div>
-          <div className="absolute bottom-[20%] right-[20%] w-[30%] h-[40%] bg-pink-500/10 dark:bg-pink-500/20 rounded-full blur-[90px] animate-blob"></div>
+        <div className="fixed inset-0 z-[0] pointer-events-none bg-slate-50 dark:bg-[#0f1117]">
+            <div className="absolute inset-0 opacity-[0.03] dark:opacity-[0.02]" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, currentColor 1px, transparent 0)', backgroundSize: '32px 32px' }}></div>
+            <div className="absolute top-0 inset-x-0 h-[50vh] bg-gradient-to-b from-blue-50/50 dark:from-blue-900/10 to-transparent"></div>
         </div>
       )}
 

@@ -16,13 +16,13 @@ export const Leaderboard = () => {
     const [showMessageModal, setShowMessageModal] = useState(false);
     const [sendSuccess, setSendSuccess] = useState(false);
     const [timeframe, setTimeframe] = useState<'all' | 'weekly' | 'monthly'>('all');
+    const [sqlIds, setSqlIds] = useState<Set<string>>(new Set());
 
     useEffect(() => {
         loadLeaderboard();
         
         // Let's ensure the current user has a username to participate fully
         if (user && profile && !profile.username) {
-            // Generate a default username if missing
             const generateUsername = async () => {
                 const randomNum = Math.floor(1000 + Math.random() * 9000);
                 const suggested = ((profile.displayName || '').replace(/\s+/g, '') || 'coder').toLowerCase() + randomNum;
@@ -35,10 +35,43 @@ export const Leaderboard = () => {
     const loadLeaderboard = async () => {
         setLoading(true);
         try {
+            const sqlQ = profile?.role === 'admin' ? collection(db, "sqlProblems") : query(collection(db, "sqlProblems"), where("published", "==", true));
+            const sqlSnap = await getDocs(sqlQ);
+            const sIds = new Set<string>();
+            sqlSnap.docs.forEach(d => sIds.add(d.id));
+            setSqlIds(sIds);
+
             const ref = collection(db, COLLECTIONS.USERS);
             const snap = await getDocs(query(ref));
             let allUsers = snap.docs.map(d => ({ uid: d.id, ...d.data() } as UserProfile))
-                .filter(u => !u.privacySettings?.hideStats); // Hide private users
+                .filter(u => !u.privacySettings?.hideStats)
+                .filter(u => u.role !== 'admin' && (u as any).isAdmin !== true && u.email?.toLowerCase() !== '17monusharma@gmail.com');
+
+            try {
+                const subSnap = await getDocs(collection(db, "sqlSubmissions"));
+                const sqlSubs = new Map<string, Map<string, number>>();
+                subSnap.docs.forEach(d => {
+                    const data = d.data();
+                    if (data.status === "Accepted") {
+                        if (!sqlSubs.has(data.userId)) sqlSubs.set(data.userId, new Map());
+                        const existing = sqlSubs.get(data.userId)!.get(data.problemId) || 0;
+                        sqlSubs.get(data.userId)!.set(data.problemId, Math.max(existing, data.timestamp || Date.now() - 10000));
+                    }
+                });
+                
+                allUsers = allUsers.map(u => {
+                    const subMap1 = sqlSubs.get(u.uid);
+                    const subMap2 = sqlSubs.get(u.username!);
+                    if (subMap1 || subMap2) {
+                        u.completedProblems = u.completedProblems || {};
+                        if (subMap1) subMap1.forEach((ts, pid) => { if (!u.completedProblems![pid]) u.completedProblems![pid] = ts; });
+                        if (subMap2) subMap2.forEach((ts, pid) => { if (!u.completedProblems![pid]) u.completedProblems![pid] = ts; });
+                    }
+                    return u;
+                });
+            } catch (e) {
+                // Ignore permission error - we fallback to completedProblems for users
+            }
 
             const now = Date.now();
             const oneWeek = 7 * 24 * 60 * 60 * 1000;
@@ -144,11 +177,21 @@ export const Leaderboard = () => {
                     const oneWeek = 7 * 24 * 60 * 60 * 1000;
                     const oneMonth = 30 * 24 * 60 * 60 * 1000;
 
-                    const displayedSolved = Object.values(u.completedProblems || {}).filter((ts: any) => {
+                    const sheetSolved = Object.entries(u.completedProblems || {}).filter(([id, ts]: [string, any]) => {
+                         if (sqlIds.has(id)) return false;
                          if (timeframe === 'weekly') return ts && (now - ts < oneWeek);
                          if (timeframe === 'monthly') return ts && (now - ts < oneMonth);
                          return true;
                     }).length;
+
+                    const sqlSolved = Object.entries(u.completedProblems || {}).filter(([id, ts]: [string, any]) => {
+                         if (!sqlIds.has(id)) return false;
+                         if (timeframe === 'weekly') return ts && (now - ts < oneWeek);
+                         if (timeframe === 'monthly') return ts && (now - ts < oneMonth);
+                         return true;
+                    }).length;
+
+                    const displayedSolved = sheetSolved + sqlSolved;
                     
                     const isSelf = u.uid === user?.uid;
                     const isFollowing = profile?.following?.includes(u.uid);
@@ -185,9 +228,17 @@ export const Leaderboard = () => {
                             </div>
 
                             <div className="grid grid-cols-2 gap-3 mt-2">
-                                <div className="bg-gray-50 dark:bg-dark-surface rounded-xl p-3 text-center border border-gray-100 dark:border-dark-border">
-                                    <div className="text-xl font-black text-slate-800 dark:text-white">{displayedSolved}</div>
-                                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{timeframe === 'all' ? 'Solved' : timeframe === 'weekly' ? 'Weekly Solved' : 'Monthly Solved'}</div>
+                                <div className="bg-gray-50 dark:bg-dark-surface rounded-xl p-3 border border-gray-100 dark:border-dark-border flex flex-col justify-center">
+                                    <div className="flex items-end justify-center gap-2">
+                                        <div className="text-xl font-black text-slate-800 dark:text-white leading-none">{displayedSolved}</div>
+                                        <div className="flex flex-col text-[9px] font-bold text-gray-500 uppercase leading-tight pb-0.5 text-left">
+                                            <span className="text-emerald-600 dark:text-emerald-400">{sheetSolved} Sheet</span>
+                                            <span className="text-indigo-600 dark:text-indigo-400">{sqlSolved} SQL</span>
+                                        </div>
+                                    </div>
+                                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider text-center mt-1.5">
+                                        {timeframe === 'all' ? 'Solved' : timeframe === 'weekly' ? 'Weekly Solved' : 'Monthly Solved'}
+                                    </div>
                                 </div>
                                 <div className="bg-orange-50 dark:bg-orange-900/20 rounded-xl p-3 text-center border border-orange-100 dark:border-orange-800/30">
                                     <div className="text-xl font-black text-orange-600 dark:text-orange-400 flex justify-center items-center gap-1">

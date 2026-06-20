@@ -1,12 +1,12 @@
 import React, { useEffect, useState, useMemo, useRef, useLayoutEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../App';
-import { getSheetsWithStats } from '../services/dataService';
+import { getSheetsWithStats, getProblemDictionary } from '../services/dataService';
 import { Sheet } from '../types';
-import { doc, getDoc, updateDoc, increment, setDoc } from 'firebase/firestore';
+import { doc, getDocs, updateDoc, increment, setDoc, collection, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { COLLECTIONS } from '../constants';
-import { Award, Zap, ChevronRight, Activity, Flame, CheckCircle2, Trophy, Target, Quote as QuoteIcon, Info, Moon, Sun, Coffee, Calendar, X, Rocket, BarChart3, Search as SearchIcon } from 'lucide-react';
+import { Award, Zap, ChevronRight, Activity, Flame, CheckCircle2, Trophy, Target, Quote as QuoteIcon, Info, Moon, Sun, Coffee, Calendar, X, Rocket, BarChart3, Search as SearchIcon, Database, Watch, PlayCircle } from 'lucide-react';
 
 // --- Creative Feature: User Ranks ---
 const RANKS = [
@@ -27,19 +27,21 @@ const QUOTES = [
   "Optimism is an occupational hazard of programming."
 ];
 
-export const ContributionGraph = ({ completedProblems }: { completedProblems: Record<string, number> }) => {
+export const ContributionGraph = ({ completedProblems, sqlIds }: { completedProblems: Record<string, number>, sqlIds: Set<string> }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Aggregated problem count per date
   const activityMap = useMemo(() => {
-    const counts: Record<string, number> = {};
-    Object.values(completedProblems).forEach(ts => {
+    const counts: Record<string, {sheet: number, sql: number}> = {};
+    Object.entries(completedProblems).forEach(([id, ts]) => {
       if (!ts) return;
       const dateStr = new Date(ts).toLocaleDateString('en-CA'); // YYYY-MM-DD
-      counts[dateStr] = (counts[dateStr] || 0) + 1;
+      if (!counts[dateStr]) counts[dateStr] = { sheet: 0, sql: 0 };
+      if (sqlIds.has(id)) counts[dateStr].sql++;
+      else counts[dateStr].sheet++;
     });
     return counts;
-  }, [completedProblems]);
+  }, [completedProblems, sqlIds]);
 
   // Generate 12 months of squares, clipping exactly at today
   const monthsData = useMemo(() => {
@@ -56,7 +58,7 @@ export const ContributionGraph = ({ completedProblems }: { completedProblems: Re
         const daysInMonth = new Date(year, month + 1, 0).getDate();
         const startDayOffset = d.getDay(); 
         
-        const days: {id: string, invisible?: boolean, date?: string, solvedCount?: number, isToday?: boolean}[] = [];
+        const days: {id: string, invisible?: boolean, date?: string, solvedCount?: number, sheetCount?: number, sqlCount?: number, isToday?: boolean}[] = [];
         
         // 1. Padding for days before the 1st
         for(let k=0; k<startDayOffset; k++) {
@@ -71,12 +73,15 @@ export const ContributionGraph = ({ completedProblems }: { completedProblems: Re
             // STOP if this day is tomorrow
             if (currentDayDate > today) break;
 
-            const solvedCount = activityMap[dateStr] || 0;
+            const activity = activityMap[dateStr] || { sheet: 0, sql: 0 };
+            const solvedCount = activity.sheet + activity.sql;
 
             days.push({
                 id: dateStr,
                 date: currentDayDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }),
                 solvedCount,
+                sheetCount: activity.sheet,
+                sqlCount: activity.sql,
                 isToday: dateStr === todayStr
             });
         }
@@ -109,7 +114,7 @@ export const ContributionGraph = ({ completedProblems }: { completedProblems: Re
                       {month.days.map((day) => (
                           <div 
                             key={day.id}
-                            title={day.invisible ? '' : `${day.date}: ${day.solvedCount || 0} problems solved`}
+                            title={day.invisible ? '' : `${day.date}: ${day.solvedCount || 0} total (${day.sheetCount || 0} Sheet, ${day.sqlCount || 0} SQL)`}
                             className={`
                                 w-3.5 h-3.5 rounded-[2px] transition-all duration-300 relative group
                                 ${day.invisible ? 'opacity-0 pointer-events-none' : ''}
@@ -176,6 +181,65 @@ const RankModal = ({ isOpen, onClose, currentRankName }: { isOpen: boolean, onCl
     );
 };
 
+function FocusTimerModal({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) {
+  const [timeLeft, setTimeLeft] = useState(25 * 60);
+  const [isActive, setIsActive] = useState(false);
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null;
+    if (isActive && timeLeft > 0) {
+      interval = setInterval(() => {
+        setTimeLeft(t => t - 1);
+      }, 1000);
+    } else if (timeLeft === 0) {
+      setIsActive(false);
+      // Play a quick sound when done if possible
+      try {
+          const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+          audio.play().catch(()=>{});
+      } catch(e){}
+    }
+    return () => { if (interval) clearInterval(interval); };
+  }, [isActive, timeLeft]);
+
+  if (!isOpen) return null;
+
+  const minutes = Math.floor(timeLeft / 60);
+  const seconds = timeLeft % 60;
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+      <div className="bg-white dark:bg-dark-card w-full max-w-sm rounded-[2rem] shadow-2xl overflow-hidden border border-gray-100 dark:border-dark-border">
+        <div className="bg-gradient-to-br from-indigo-500 to-purple-600 p-8 text-center text-white relative">
+            <button onClick={onClose} className="absolute top-4 right-4 p-2 bg-white/20 hover:bg-white/30 rounded-full transition-colors"><X size={18} /></button>
+            <Watch size={48} className="mx-auto mb-4 opacity-80" />
+            <h2 className="text-2xl font-black tracking-tight">Focus Session</h2>
+            <p className="text-indigo-100 text-xs font-bold uppercase tracking-widest mt-1">Deep work</p>
+        </div>
+        <div className="p-8 text-center bg-slate-50 dark:bg-dark-surface">
+            <div className="text-7xl font-mono font-black text-slate-800 dark:text-white mb-8 tracking-tighter">
+                {String(minutes).padStart(2, '0')}:{String(seconds).padStart(2, '0')}
+            </div>
+            <div className="flex gap-4 justify-center">
+                <button 
+                    onClick={() => setIsActive(!isActive)}
+                    className={`px-8 py-4 rounded-xl font-black uppercase tracking-widest text-sm transition-all shadow-lg hover:-translate-y-1 ${isActive ? 'bg-orange-100 text-orange-600 shadow-orange-500/20' : 'bg-indigo-600 text-white shadow-indigo-500/30 hover:bg-indigo-700'}`}
+                >
+                    {isActive ? 'Pause' : (timeLeft < 25*60 ? 'Resume' : 'Start')}
+                </button>
+                <button 
+                    onClick={() => { setIsActive(false); setTimeLeft(25*60); }}
+                    className="px-6 py-4 rounded-xl font-black uppercase tracking-widest text-sm bg-gray-200 text-gray-500 hover:bg-gray-300 dark:bg-dark-border dark:text-gray-400 dark:hover:text-white transition-colors"
+                >
+                    Reset
+                </button>
+            </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function UserDashboard() {
   const { user, profile, refreshProfile } = useAuth();
   const [sheets, setSheets] = useState<(Sheet & { total: number, solved: number })[]>([]);
@@ -222,7 +286,92 @@ export default function UserDashboard() {
     load();
   }, [profile]);
 
-  const totalSolved = Object.keys(profile?.completedProblems || {}).length;
+  const [sqlIds, setSqlIds] = useState<Set<string>>(new Set());
+  const [sqlDict, setSqlDict] = useState<Record<string, any>>({});
+  const [problemDict, setProblemDict] = useState<Record<string, any>>({});
+  const [worldRank, setWorldRank] = useState<number | null>(null);
+  const [showFocusTimer, setShowFocusTimer] = useState(false);
+
+  useEffect(() => {
+    const fetchDict = async () => {
+        if (!profile) return;
+        try {
+            const solvedIds = Object.keys(profile.completedProblems || {});
+            if (solvedIds.length > 0) {
+                const dict = await getProblemDictionary(solvedIds);
+                setProblemDict(dict);
+            }
+        } catch(e){}
+    };
+    fetchDict();
+  }, [profile]);
+
+  useEffect(() => {
+    const fetchSqlIds = async () => {
+      try {
+        const snap = await getDocs(query(collection(db, "sqlProblems"), where("published", "==", true)));
+        setSqlIds(new Set(snap.docs.map(doc => doc.id)));
+        const sd: Record<string, any> = {};
+        snap.docs.forEach(d => sd[d.id] = { id: d.id, ...d.data() });
+        setSqlDict(sd);
+      } catch (err) {
+        console.error("Failed to fetch SQL problem IDs", err);
+      }
+    };
+    fetchSqlIds();
+  }, []);
+
+  useEffect(() => {
+    const syncLegacySql = async () => {
+        if (!user || !profile) return;
+        try {
+            const snap = await getDocs(query(collection(db, "sqlSubmissions"), where("userId", "==", user.uid)));
+            let needsUpdate = false;
+            const updates: any = {};
+            snap.docs.forEach(d => {
+                const data = d.data();
+                if (data.status === "Accepted" && !profile.completedProblems?.[data.problemId]) {
+                    needsUpdate = true;
+                    updates[`completedProblems.${data.problemId}`] = data.timestamp || Date.now() - 10000;
+                }
+            });
+            if (needsUpdate) {
+                await updateDoc(doc(db, COLLECTIONS.USERS, user.uid), updates);
+                if (refreshProfile) refreshProfile();
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    };
+    syncLegacySql();
+  }, [user, profile?.uid]);
+
+  useEffect(() => {
+    const fetchWorldRank = async () => {
+        try {
+            const usersSnap = await getDocs(query(collection(db, COLLECTIONS.USERS)));
+            let mySolved = Object.keys(profile?.completedProblems || {}).length;
+            let rankNum = 1;
+            usersSnap.docs.forEach(d => {
+                const p = d.data();
+                if (p.role !== 'admin' && p.isAdmin !== true && p.email?.toLowerCase() !== '17monusharma@gmail.com') {
+                    if (d.id !== profile?.uid && Object.keys(p.completedProblems || {}).length > mySolved) {
+                        rankNum++;
+                    }
+                }
+            });
+            setWorldRank(rankNum);
+        } catch (err) {
+            console.error("Failed to calculate world rank", err);
+        }
+    };
+    if (profile) fetchWorldRank();
+  }, [profile]);
+
+  const completedProblemIds = Object.keys(profile?.completedProblems || {});
+  const sheetTotalSolved = completedProblemIds.filter(id => !sqlIds.has(id)).length;
+  const sqlTotalSolved = completedProblemIds.filter(id => sqlIds.has(id)).length;
+  const totalSolved = completedProblemIds.length;
 
   const currentRankIndex = RANKS.slice().reverse().findIndex(r => totalSolved >= r.threshold);
   const rank = currentRankIndex !== -1 ? RANKS[RANKS.length - 1 - currentRankIndex] : RANKS[0];
@@ -249,11 +398,19 @@ export default function UserDashboard() {
       }
   };
 
-  const problemsToday = useMemo(() => {
-    return Object.values(profile?.completedProblems || {}).filter(ts => {
-        return ts && new Date(ts).toLocaleDateString('en-CA') === todayStr;
+  const sheetToday = useMemo(() => {
+    return Object.entries(profile?.completedProblems || {}).filter(([id, ts]) => {
+        return !sqlIds.has(id) && ts && new Date(ts).toLocaleDateString('en-CA') === todayStr;
     }).length;
-  }, [profile, todayStr]);
+  }, [profile, todayStr, sqlIds]);
+
+  const sqlToday = useMemo(() => {
+    return Object.entries(profile?.completedProblems || {}).filter(([id, ts]) => {
+        return sqlIds.has(id) && ts && new Date(ts).toLocaleDateString('en-CA') === todayStr;
+    }).length;
+  }, [profile, todayStr, sqlIds]);
+
+  const problemsToday = sheetToday + sqlToday;
   const dailyProgress = Math.min(100, Math.round((problemsToday / dailyTarget) * 100));
 
   const badges = useMemo(() => {
@@ -284,12 +441,17 @@ export default function UserDashboard() {
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good Morning' : hour < 18 ? 'Good Afternoon' : 'Good Evening';
 
+  const sheetTotalProblems = sheets.reduce((acc, sheet) => acc + (sheet.total || 0), 0);
+  const sqlTotalProblems = sqlIds.size;
+
   // Stats Card data
   const statsList = [
-    { label: 'Solved', value: totalSolved, icon: Activity, bg: 'bg-blue-50 dark:bg-blue-900/20', text: 'text-blue-600 dark:text-blue-400' },
-    { label: 'Streak', value: profile?.currentStreak || 0, icon: Flame, bg: 'bg-orange-50 dark:bg-orange-900/20', text: 'text-orange-600 dark:text-orange-400', fill: true },
-    { label: 'Best', value: profile?.maxStreak || 0, icon: Target, bg: 'bg-purple-50 dark:bg-purple-900/20', text: 'text-purple-600 dark:text-purple-400' },
-    { label: 'Today', value: problemsToday, icon: BarChart3, bg: 'bg-emerald-50 dark:bg-emerald-900/20', text: 'text-emerald-600 dark:text-emerald-400' }
+    { label: 'Sheet Solved', value: sheetTotalSolved, max: sheetTotalProblems, icon: Activity, bg: 'bg-blue-50 dark:bg-blue-900/20', text: 'text-blue-600 dark:text-blue-400' },
+    { label: 'SQL Solved', value: sqlTotalSolved, max: sqlTotalProblems, icon: Database, bg: 'bg-teal-50 dark:bg-teal-900/20', text: 'text-teal-600 dark:text-teal-400' },
+    { label: 'Global Streak', value: profile?.currentStreak || 0, icon: Flame, bg: 'bg-orange-50 dark:bg-orange-900/20', text: 'text-orange-600 dark:text-orange-400', fill: true },
+    { label: 'Best Streak', value: profile?.maxStreak || 0, icon: Target, bg: 'bg-purple-50 dark:bg-purple-900/20', text: 'text-purple-600 dark:text-purple-400' },
+    { label: 'Today (Sheet)', value: sheetToday, icon: BarChart3, bg: 'bg-emerald-50 dark:bg-emerald-900/20', text: 'text-emerald-600 dark:text-emerald-400' },
+    { label: 'Today (SQL)', value: sqlToday, icon: Database, bg: 'bg-indigo-50 dark:bg-indigo-900/20', text: 'text-indigo-600 dark:text-indigo-400' }
   ];
 
   return (
@@ -351,7 +513,7 @@ export default function UserDashboard() {
               <div className="mt-4 flex flex-wrap gap-2 justify-center md:justify-start">
                   <button 
                       onClick={() => {
-                          const text = `🚀 *My DSA Progress*\n\n🔥 Streak: ${profile?.currentStreak || 0} days\n🏆 Max Streak: ${profile?.maxStreak || 0} days\n✅ Solved: ${totalSolved} problems\n🏅 Rank: ${rank.name}\n\nJoin me in mastering algorithms!`;
+                          const text = `🚀 *My DSA & SQL Progress*\n\n🔥 Streak: ${profile?.currentStreak || 0} days\n🏆 Max Streak: ${profile?.maxStreak || 0} days\n✅ Solved: ${totalSolved} problems\n🏅 Rank: ${rank.name}\n\nJoin me!`;
                           navigator.clipboard.writeText(text);
                           alert("Progress summary copied to clipboard!");
                       }} 
@@ -375,19 +537,11 @@ export default function UserDashboard() {
           </div>
           
           <div className="flex flex-col md:flex-row items-center gap-4">
-              <div className="flex flex-col items-center md:items-end w-full md:w-auto">
-                  {hasCheckedIn ? (
-                      <div className="w-full md:w-auto px-6 py-3 bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl flex flex-col items-center md:items-end box-border">
-                            <div className="text-emerald-600 dark:text-emerald-400 font-black flex items-center gap-2 text-sm">
-                                <CheckCircle2 size={16} /> Checked In
-                            </div>
-                            <div className="text-[10px] text-emerald-500 dark:text-emerald-500/80 font-bold uppercase mt-1">+{profile?.points || 0} pts total</div>
-                      </div>
-                  ) : (
-                      <button onClick={handleCheckIn} className="w-full md:w-auto px-6 py-3 bg-gradient-to-tr from-yellow-400 to-orange-500 hover:from-yellow-500 hover:to-orange-600 text-white font-black rounded-xl shadow-lg shadow-orange-500/30 transition-transform active:scale-95 flex items-center justify-center gap-2 animate-pulse">
-                          <Zap size={18} fill="currentColor" /> Claim Daily 10pts
-                      </button>
-                  )}
+              <div className="flex flex-col bg-white dark:bg-dark-card glass-panel px-5 py-3 rounded-2xl shadow-sm border border-gray-100 dark:border-dark-border w-full md:w-auto mt-4 md:mt-0">
+                   <div className="flex flex-col h-full justify-center text-center px-4 border-r border-gray-100 dark:border-dark-border">
+                       <span className="text-[10px] uppercase font-black text-gray-400 tracking-widest mb-1">World Rank</span>
+                       <span className="text-2xl font-black text-slate-800 dark:text-white">#{worldRank || '...'}</span>
+                   </div>
               </div>
               <div className="flex items-center gap-4 bg-white dark:bg-dark-card glass-panel px-5 py-3 rounded-2xl shadow-sm border border-gray-100 dark:border-dark-border w-full md:w-auto">
                    <div className={`p-3 rounded-xl shadow-inner ${rank.bg} ${rank.color}`}>
@@ -415,16 +569,66 @@ export default function UserDashboard() {
           
           <div className="lg:col-span-8 space-y-8">
              {/* Main Stats Cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                {statsList.map((stat, i) => (
-                    <div key={i} className="bg-white dark:bg-dark-card glass-container rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-dark-border group hover:border-primary-200 transition-all hover:-translate-y-1">
-                        <div className={`mb-3 p-2 w-fit rounded-lg ${stat.bg} ${stat.text} group-hover:scale-110 transition-transform`}>
-                            <stat.icon size={20} fill={stat.fill ? "currentColor" : "none"} />
-                        </div>
-                        <div className="text-2xl font-black text-slate-800 dark:text-white leading-none">{stat.value}</div>
-                        <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mt-1.5">{stat.label}</div>
-                    </div>
-                ))}
+            <div className="space-y-6">
+                <div>
+                   <h3 className="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest mb-3 flex items-center gap-2">
+                       <Activity size={16} className="text-blue-500" /> DSA Roadmap Stats
+                   </h3>
+                   <div className="grid grid-cols-2 sm:grid-cols-2 gap-4">
+                        {[statsList[0], statsList[4]].map((stat, i) => (
+                            <div key={i} className="bg-white dark:bg-dark-card glass-container rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-dark-border group hover:border-primary-200 transition-all hover:-translate-y-1">
+                                <div className={`mb-3 p-2 w-fit rounded-lg ${stat.bg} ${stat.text} group-hover:scale-110 transition-transform`}>
+                                    <stat.icon size={20} fill={stat.fill ? "currentColor" : "none"} />
+                                </div>
+                                <div className="text-2xl font-black text-slate-800 dark:text-white leading-none">
+                                    {stat.value}
+                                    {stat.max !== undefined && <span className="text-sm font-bold text-gray-400 ml-1">/ {stat.max}</span>}
+                                </div>
+                                <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mt-1.5">{stat.label}</div>
+                            </div>
+                        ))}
+                   </div>
+                </div>
+
+                <div>
+                   <h3 className="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest mb-3 flex items-center gap-2">
+                       <Database size={16} className="text-teal-500" /> SQL Mastery Stats
+                   </h3>
+                   <div className="grid grid-cols-2 sm:grid-cols-2 gap-4">
+                        {[statsList[1], statsList[5]].map((stat, i) => (
+                            <div key={i} className="bg-white dark:bg-dark-card glass-container rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-dark-border group hover:border-primary-200 transition-all hover:-translate-y-1">
+                                <div className={`mb-3 p-2 w-fit rounded-lg ${stat.bg} ${stat.text} group-hover:scale-110 transition-transform`}>
+                                    <stat.icon size={20} fill={stat.fill ? "currentColor" : "none"} />
+                                </div>
+                                <div className="text-2xl font-black text-slate-800 dark:text-white leading-none">
+                                    {stat.value}
+                                    {stat.max !== undefined && <span className="text-sm font-bold text-gray-400 ml-1">/ {stat.max}</span>}
+                                </div>
+                                <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mt-1.5">{stat.label}</div>
+                            </div>
+                        ))}
+                   </div>
+                </div>
+
+                <div>
+                   <h3 className="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest mb-3 flex items-center gap-2">
+                       <Flame size={16} className="text-orange-500" /> Global Streaks
+                   </h3>
+                   <div className="grid grid-cols-2 sm:grid-cols-2 gap-4">
+                        {[statsList[2], statsList[3]].map((stat, i) => (
+                            <div key={i} className="bg-white dark:bg-dark-card glass-container rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-dark-border group hover:border-primary-200 transition-all hover:-translate-y-1">
+                                <div className={`mb-3 p-2 w-fit rounded-lg ${stat.bg} ${stat.text} group-hover:scale-110 transition-transform`}>
+                                    <stat.icon size={20} fill={stat.fill ? "currentColor" : "none"} />
+                                </div>
+                                <div className="text-2xl font-black text-slate-800 dark:text-white leading-none">
+                                    {stat.value}
+                                    {stat.max !== undefined && <span className="text-sm font-bold text-gray-400 ml-1">/ {stat.max}</span>}
+                                </div>
+                                <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mt-1.5">{stat.label}</div>
+                            </div>
+                        ))}
+                   </div>
+                </div>
             </div>
 
             {/* Smart Activity Log (Dynamic clipping applied) */}
@@ -438,24 +642,90 @@ export default function UserDashboard() {
                         <Calendar size={12} /> Live Tracking
                     </div>
                 </div>
-                <ContributionGraph completedProblems={profile?.completedProblems || {}} />
+                <ContributionGraph completedProblems={profile?.completedProblems || {}} sqlIds={sqlIds} />
+                
+                <div className="mt-8 pt-6 border-t border-gray-100 dark:border-dark-border">
+                    <h3 className="text-sm font-black text-slate-800 dark:text-gray-200 uppercase tracking-widest mb-4">Latest Solutions</h3>
+                    <div className="space-y-3">
+                        {(() => {
+                            const recentActivity = Object.entries(profile?.completedProblems || {})
+                                .filter(([_, ts]) => ts && typeof ts === 'number')
+                                .sort((a, b) => (b[1] as number) - (a[1] as number))
+                                .slice(0, 5);
+                                
+                            if (recentActivity.length === 0) {
+                                return <div className="text-sm text-gray-400 italic">No recent activity found. Start solving problems!</div>;
+                            }
+                            
+                            return recentActivity.map(([probId, ts]) => {
+                                const title = problemDict[probId]?.title || sqlDict[probId]?.title || 'A challenge';
+                                const isSql = !!sqlDict[probId];
+                                return (
+                                   <div key={probId} className="flex items-center gap-4 p-3 rounded-xl hover:bg-gray-50 dark:hover:bg-dark-surface transition-colors border border-transparent hover:border-gray-100 dark:hover:border-dark-border">
+                                       <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${isSql ? 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400' : 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400'}`}>
+                                           {isSql ? <Database size={14} /> : <Trophy size={14} />}
+                                       </div>
+                                       <div className="flex-1 min-w-0">
+                                           <div className="text-sm font-bold text-slate-800 dark:text-gray-200 truncate">{title}</div>
+                                           <div className="text-[10px] text-gray-500 font-medium uppercase">{isSql ? 'SQL Module' : 'DSA Roadmap'}</div>
+                                       </div>
+                                       <div className="text-[10px] font-bold text-gray-400 whitespace-nowrap">
+                                           {new Date(ts as number).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                                       </div>
+                                   </div>
+                                );
+                            });
+                        })()}
+                    </div>
+                </div>
             </div>
 
-            {/* Quick Actions / Daily Random */}
-            <div className="bg-gradient-to-r from-emerald-500 to-teal-500 rounded-2xl shadow-sm p-6 text-white flex flex-col md:flex-row items-center justify-between gap-6 group hover:shadow-lg hover:shadow-emerald-500/20 transition-all">
-                <div>
-                    <h2 className="text-xl font-black mb-1 flex items-center gap-2"><Target size={22} className="text-emerald-100" /> Daily Brain Teaser</h2>
-                    <p className="text-teal-100 text-sm font-medium">Click to grab a random problem from your roadmap and keep your skills sharp.</p>
+            {/* Quick Actions Array */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div onClick={() => setShowFocusTimer(true)} className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl shadow-sm p-4 md:p-6 text-white group hover:shadow-lg hover:-translate-y-1 transition-all cursor-pointer relative overflow-hidden">
+                    <div className="absolute -right-4 -bottom-4 opacity-20 transform group-hover:scale-125 transition-transform"><Watch size={80} /></div>
+                    <div className="relative z-10">
+                        <h2 className="text-base md:text-lg font-black mb-1 flex items-center gap-2"><Watch size={18} /> Timer</h2>
+                        <p className="text-white/80 text-[10px] md:text-[11px] font-bold hidden md:block">Start a deep-work session.</p>
+                    </div>
                 </div>
-                <button 
-                    onClick={() => {
+
+                <div onClick={() => {
                         const event = new KeyboardEvent('keydown', { key: 'k', metaKey: true });
                         window.dispatchEvent(event);
-                    }}
-                    className="px-6 py-3 bg-white text-emerald-600 rounded-xl font-bold shadow-md hover:bg-emerald-50 transition-colors flex items-center gap-2 flex-shrink-0"
-                >
-                    <SearchIcon size={18} /> Search Library
-                </button>
+                    }} 
+                    className="bg-gradient-to-br from-emerald-500 to-teal-500 rounded-2xl shadow-sm p-4 md:p-6 text-white group hover:shadow-lg hover:-translate-y-1 transition-all cursor-pointer relative overflow-hidden">
+                    <div className="absolute -right-4 -bottom-4 opacity-20 transform group-hover:scale-125 transition-transform"><Target size={80} /></div>
+                    <div className="relative z-10">
+                        <h2 className="text-base md:text-lg font-black mb-1 flex items-center gap-2"><Target size={18} /> Search</h2>
+                        <p className="text-white/80 text-[10px] md:text-[11px] font-bold hidden md:block">Find a specific problem.</p>
+                    </div>
+                </div>
+
+                <Link to={sheets.length > 0 ? `/sheet/${sheets[0].id}` : '/dashboard'} className="bg-gradient-to-br from-orange-400 to-red-500 rounded-2xl shadow-sm p-4 md:p-6 text-white group hover:shadow-lg hover:-translate-y-1 transition-all cursor-pointer relative overflow-hidden">
+                    <div className="absolute -right-4 -bottom-4 opacity-20 transform group-hover:scale-125 transition-transform"><PlayCircle size={80} /></div>
+                    <div className="relative z-10">
+                        <h2 className="text-base md:text-lg font-black mb-1 flex items-center gap-2"><PlayCircle size={18} /> Resume</h2>
+                        <p className="text-white/80 text-[10px] md:text-[11px] font-bold hidden md:block">Jump back into sheet.</p>
+                    </div>
+                </Link>
+
+                <div onClick={() => {
+                        const data = JSON.stringify({ profile, completed: Object.keys(profile?.completedProblems || {}) }, null, 2);
+                        const blob = new Blob([data], { type: 'application/json' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `msquare_progress_${profile?.username || 'user'}.json`;
+                        a.click();
+                    }} 
+                    className="bg-gradient-to-br from-blue-500 to-cyan-500 rounded-2xl shadow-sm p-4 md:p-6 text-white group hover:shadow-lg hover:-translate-y-1 transition-all cursor-pointer relative overflow-hidden">
+                    <div className="absolute -right-4 -bottom-4 opacity-20 transform group-hover:scale-125 transition-transform"><Database size={80} /></div>
+                    <div className="relative z-10">
+                        <h2 className="text-base md:text-lg font-black mb-1 flex items-center gap-2"><Database size={18} /> Export</h2>
+                        <p className="text-white/80 text-[10px] md:text-[11px] font-bold hidden md:block">Download your data.</p>
+                    </div>
+                </div>
             </div>
 
             {/* Sheets List */}
@@ -578,6 +848,7 @@ export default function UserDashboard() {
           </div>
       </div>
       <RankModal isOpen={isRankModalOpen} onClose={() => setIsRankModalOpen(false)} currentRankName={rank.name} />
+      <FocusTimerModal isOpen={showFocusTimer} onClose={() => setShowFocusTimer(false)} />
     </div>
   );
 }
