@@ -565,6 +565,66 @@ export default function UserDashboard() {
           </div>
       </div>
 
+      {/* Sheets List (moved up for better accessibility) */}
+      <div className="mb-8">
+          <div className="flex items-center justify-between mb-6 px-1">
+              <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight uppercase">Your Roadmap</h2>
+              <span className="text-xs font-bold text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20 px-3 py-1 rounded-full">{sheets.length} Sheets</span>
+          </div>
+          {loading ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {[1,2,3].map(i => <div key={i} className="h-44 bg-gray-200 dark:bg-dark-border rounded-2xl animate-pulse"></div>)}
+              </div>
+          ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {sheets.map(sheet => {
+                      const progress = sheet.total > 0 ? Math.round((sheet.solved / sheet.total) * 100) : 0;
+                      return (
+                          <Link 
+                              key={sheet.id} 
+                              to={`/sheet/${sheet.id}`}
+                              className="group flex flex-col bg-white dark:bg-dark-card glass-container rounded-2xl shadow-sm border border-gray-100 dark:border-dark-border overflow-hidden hover:shadow-xl transition-all hover:border-primary-400"
+                          >
+                              <div className="p-6 flex-1">
+                                  <div className="flex justify-between items-start mb-4">
+                                      <h3 className="text-xl font-bold text-slate-900 dark:text-white group-hover:text-primary-600 transition-colors">{sheet.title}</h3>
+                                      {progress === 100 ? (
+                                          <div className="bg-emerald-100 dark:bg-emerald-900/30 p-1.5 rounded-full text-emerald-600">
+                                              <CheckCircle2 size={18} />
+                                          </div>
+                                      ) : (
+                                          <div className="text-slate-300 dark:text-slate-600 group-hover:text-primary-300 transition-colors">
+                                              <ChevronRight size={22} />
+                                          </div>
+                                      )}
+                                  </div>
+                                  <div className="space-y-4">
+                                      <div className="flex justify-between items-end">
+                                          <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Mastery</div>
+                                          <div className="font-mono font-black text-primary-600 text-lg">{progress}%</div>
+                                      </div>
+                                      <div className="w-full h-3 bg-gray-100 dark:bg-dark-border rounded-full overflow-hidden p-[2px] border border-gray-50 dark:border-slate-800">
+                                          <div 
+                                              className="h-full bg-gradient-to-r from-primary-500 to-violet-600 rounded-full transition-all duration-700 shadow-[0_0_10px_rgba(99,102,241,0.3)] shimmer-bg" 
+                                              style={{ width: `${progress}%` }}
+                                          />
+                                      </div>
+                                      <div className="flex justify-between text-[11px] font-bold text-slate-400">
+                                          <span>{sheet.solved} Solved</span>
+                                          <span>{sheet.total - sheet.solved} Remaining</span>
+                                      </div>
+                                  </div>
+                              </div>
+                              <div className="px-6 py-3 bg-gray-50 dark:bg-dark-surface/50 border-t border-gray-100 dark:border-dark-border flex justify-center">
+                                  <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 group-hover:text-primary-600 transition-colors">Open Practice Sheet</span>
+                              </div>
+                          </Link>
+                      )
+                  })}
+              </div>
+          )}
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           
           <div className="lg:col-span-8 space-y-8">
@@ -726,66 +786,6 @@ export default function UserDashboard() {
                         <p className="text-white/80 text-[10px] md:text-[11px] font-bold hidden md:block">Download your data.</p>
                     </div>
                 </div>
-            </div>
-
-            {/* Sheets List */}
-            <div>
-                <div className="flex items-center justify-between mb-6 px-1">
-                    <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight uppercase">Your Roadmap</h2>
-                    <span className="text-xs font-bold text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20 px-3 py-1 rounded-full">{sheets.length} Sheets</span>
-                </div>
-                {loading ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {[1,2].map(i => <div key={i} className="h-44 bg-gray-200 dark:bg-dark-border rounded-2xl animate-pulse"></div>)}
-                    </div>
-                ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {sheets.map(sheet => {
-                            const progress = sheet.total > 0 ? Math.round((sheet.solved / sheet.total) * 100) : 0;
-                            return (
-                                <Link 
-                                    key={sheet.id} 
-                                    to={`/sheet/${sheet.id}`}
-                                    className="group flex flex-col bg-white dark:bg-dark-card glass-container rounded-2xl shadow-sm border border-gray-100 dark:border-dark-border overflow-hidden hover:shadow-xl transition-all hover:border-primary-400"
-                                >
-                                    <div className="p-6 flex-1">
-                                        <div className="flex justify-between items-start mb-4">
-                                            <h3 className="text-xl font-bold text-slate-900 dark:text-white group-hover:text-primary-600 transition-colors">{sheet.title}</h3>
-                                            {progress === 100 ? (
-                                                <div className="bg-emerald-100 dark:bg-emerald-900/30 p-1.5 rounded-full text-emerald-600">
-                                                    <CheckCircle2 size={18} />
-                                                </div>
-                                            ) : (
-                                                <div className="text-slate-300 dark:text-slate-600 group-hover:text-primary-300 transition-colors">
-                                                    <ChevronRight size={22} />
-                                                </div>
-                                            )}
-                                        </div>
-                                        <div className="space-y-4">
-                                            <div className="flex justify-between items-end">
-                                                <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Mastery</div>
-                                                <div className="font-mono font-black text-primary-600 text-lg">{progress}%</div>
-                                            </div>
-                                            <div className="w-full h-3 bg-gray-100 dark:bg-dark-border rounded-full overflow-hidden p-[2px] border border-gray-50 dark:border-slate-800">
-                                                <div 
-                                                    className="h-full bg-gradient-to-r from-primary-500 to-violet-600 rounded-full transition-all duration-700 shadow-[0_0_10px_rgba(99,102,241,0.3)] shimmer-bg" 
-                                                    style={{ width: `${progress}%` }}
-                                                />
-                                            </div>
-                                            <div className="flex justify-between text-[11px] font-bold text-slate-400">
-                                                <span>{sheet.solved} Solved</span>
-                                                <span>{sheet.total - sheet.solved} Remaining</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div className="px-6 py-3 bg-gray-50 dark:bg-dark-surface/50 border-t border-gray-100 dark:border-dark-border flex justify-center">
-                                        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 group-hover:text-primary-600 transition-colors">Open Practice Sheet</span>
-                                    </div>
-                                </Link>
-                            )
-                        })}
-                    </div>
-                )}
             </div>
           </div>
 

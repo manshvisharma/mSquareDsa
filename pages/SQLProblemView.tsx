@@ -676,7 +676,24 @@ export default function SQLProblemView() {
           </div>
         </div>
 
-        <div className="flex gap-3 items-center w-1/3 justify-end">
+        <div className="flex gap-3 items-center w-auto justify-end">
+          {allProblems.length > 0 && (
+            <div className="hidden sm:flex items-center gap-2 mr-1 group relative">
+              <div className="relative w-8 h-8 pointer-events-none">
+                 <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                      <circle cx="50" cy="50" r="40" stroke="currentColor" strokeWidth="12" fill="transparent" className="text-gray-100 dark:text-[#333]" />
+                      <circle cx="50" cy="50" r="40" stroke="currentColor" strokeWidth="12" fill="transparent" strokeDasharray="251.2" strokeDashoffset={251.2 - (251.2 * (solvedProblemIds.size / allProblems.length))} className="text-emerald-500 transition-all duration-1000 ease-out" />
+                 </svg>
+              </div>
+              <div className="flex flex-col">
+                  <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider tabular-nums leading-none mb-0.5">{solvedProblemIds.size} / {allProblems.length}</span>
+                  <span className="text-[10px] font-black text-slate-800 dark:text-gray-200 leading-none">Solved</span>
+              </div>
+              <div className="absolute top-10 right-0 w-max opacity-0 group-hover:opacity-100 transition-opacity bg-slate-800 text-white text-xs px-2 py-1 rounded shadow-lg pointer-events-none z-50">
+                  SQL Mastery Progress
+              </div>
+            </div>
+          )}
           <FocusTimer inline={true} />
           {runningProgress && (
             <div className="flex items-center gap-2 text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-3 py-1.5 rounded-md mr-1">
