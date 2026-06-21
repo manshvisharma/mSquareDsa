@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import { Editor } from "@monaco-editor/react";
 import { PGlite } from "@electric-sql/pglite";
 import { SQLProblem } from "../types";
@@ -780,10 +780,15 @@ export default function SQLProblemView() {
                         Solved
                       </span>
                     )}
+                    {problem.category && problem.category !== 'Basic' && (
+                        <Link to={`/sql/topic/${problem.category}`} className="px-2.5 py-1 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 border border-indigo-100 dark:border-indigo-800/30 rounded-md text-xs font-semibold transition-colors">
+                            {problem.category}
+                        </Link>
+                    )}
                     {(problem.tags || []).map(tag => (
-                      <span key={tag} className="px-2.5 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-800/30 rounded-md text-xs font-semibold">
+                      <Link to={`/sql/topic/${tag}`} key={tag} className="px-2.5 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/40 border border-blue-100 dark:border-blue-800/30 rounded-md text-xs font-semibold transition-colors">
                         {tag}
-                      </span>
+                      </Link>
                     ))}
                   </div>
                   <div className="prose prose-sm dark:prose-invert max-w-none prose-p:text-slate-600 dark:prose-p:text-gray-400 prose-headings:text-slate-800 dark:prose-headings:text-gray-200 prose-code:font-mono prose-code:text-slate-800 dark:prose-code:text-gray-300 prose-code:bg-slate-100 dark:prose-code:bg-[#2d2d2d] prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-md prose-code:before:content-none prose-code:after:content-none prose-pre:bg-slate-50 dark:prose-pre:bg-[#0a0a0a] prose-pre:border prose-pre:border-gray-200 dark:prose-pre:border-[#333]">

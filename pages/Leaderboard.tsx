@@ -32,6 +32,49 @@ export const Leaderboard = () => {
         }
     }, [profile, timeframe]);
 
+    const formatLastSeen = (timestamp?: number) => {
+        if (!timestamp) return 'Offline';
+        const diff = Date.now() - timestamp;
+        if (diff < 2 * 60 * 1000) return 'Online';
+        
+        const minutes = Math.floor(diff / 60000);
+        if (minutes < 60) return `${minutes}m ago`;
+        const hours = Math.floor(minutes / 60);
+        if (hours < 24) return `${hours}h ago`;
+        const days = Math.floor(hours / 24);
+        if (days < 7) return `${days}d ago`;
+        return `${new Date(timestamp).toLocaleDateString()}`;
+    };
+
+    const isOnline = (timestamp?: number) => {
+        if (!timestamp) return false;
+        return (Date.now() - timestamp) < 2 * 60 * 1000;
+    };
+
+    useEffect(() => {
+        if (!process.env.NODE_ENV) return;
+        const unsub = onSnapshot(collection(db, COLLECTIONS.USERS), (snap) => {
+            const activeMap = new Map<string, number>();
+            snap.docs.forEach(d => {
+                const data = d.data();
+                if (data.lastActive) activeMap.set(d.id, data.lastActive);
+            });
+            setUsers(prev => {
+                let changed = false;
+                const next = prev.map(u => {
+                    const latest = activeMap.get(u.uid!);
+                    if (latest && latest !== u.lastActive) {
+                        changed = true;
+                        return { ...u, lastActive: latest };
+                    }
+                    return u;
+                });
+                return changed ? next : prev;
+            });
+        });
+        return () => unsub();
+    }, []);
+
     const loadLeaderboard = async () => {
         setLoading(true);
         try {
@@ -210,20 +253,36 @@ export const Leaderboard = () => {
                             )}
                             
                             <div className="flex items-center gap-4">
-                                {u.photoURL && !u.photoURL.includes('dicebear') ? (
-                                    <img src={u.photoURL} alt={u.username} className="w-14 h-14 rounded-full border-2 border-primary-100 object-cover shadow-md bg-white" />
-                                ) : (
-                                    <div className="w-14 h-14 rounded-full bg-gradient-to-tr from-primary-400 to-purple-500 flex items-center justify-center font-bold shadow-md relative overflow-hidden border-2 border-primary-100">
-                                        <img src={u.photoURL || `https://api.dicebear.com/7.x/adventurer/svg?seed=${u.username || u.uid}`} className="w-14 h-14 object-cover bg-white" alt={u.username} />
-                                    </div>
-                                )}
+                                <div className="relative">
+                                    {u.photoURL && !u.photoURL.includes('dicebear') ? (
+                                        <img src={u.photoURL} alt={u.username} className="w-14 h-14 rounded-full border-2 border-primary-100 object-cover shadow-md bg-white" />
+                                    ) : (
+                                        <div className="w-14 h-14 rounded-full bg-gradient-to-tr from-primary-400 to-purple-500 flex items-center justify-center font-bold shadow-md relative overflow-hidden border-2 border-primary-100">
+                                            <img src={u.photoURL || `https://api.dicebear.com/7.x/adventurer/svg?seed=${u.username || u.uid}`} className="w-14 h-14 object-cover bg-white" alt={u.username} />
+                                        </div>
+                                    )}
+                                    {isOnline(u.lastActive) ? (
+                                        <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-white dark:border-dark-card shadow-sm" title="Online now"></div>
+                                    ) : (
+                                        <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-gray-400 rounded-full border-2 border-white dark:border-dark-card shadow-sm" title={formatLastSeen(u.lastActive)}></div>
+                                    )}
+                                </div>
                                 <div className="flex-1 min-w-0 pointer-events-auto">
                                     <Link to={`/user/${u.username || u.uid}`} className="font-bold text-lg dark:text-white truncate flex items-center gap-1 hover:text-primary-600 transition-colors">
                                         {u.displayName || u.username || u.email?.split('@')[0] || 'Anonymous'}
                                         {bestMedal && <span title={bestMedal.title} className="text-sm cursor-help">{bestMedal.icon}</span>}
                                         {isSelf && <span className="bg-primary-100 text-primary-600 text-[10px] px-1.5 py-0.5 rounded ml-2">YOU</span>}
                                     </Link>
-                                    <p className="text-sm text-gray-500 dark:text-gray-400 truncate">@{u.username || u.email?.split('@')[0] || 'coder'} {u.leetcodeHandle && <span className="ml-1 text-[10px] border px-1 rounded bg-orange-50 text-orange-600 border-orange-200">LC: {u.leetcodeHandle}</span>}</p>
+                                    <p className="text-sm text-gray-500 dark:text-gray-400 truncate flex items-center">
+                                        @{u.username || u.email?.split('@')[0] || 'coder'} 
+                                        {u.leetcodeHandle && <span className="ml-1 text-[10px] border px-1 rounded bg-orange-50 text-orange-600 border-orange-200">LC: {u.leetcodeHandle}</span>}
+                                        <span className="mx-1.5 opacity-50">•</span>
+                                        {isOnline(u.lastActive) ? (
+                                            <span className="text-[10px] text-green-500 font-medium">Online</span>
+                                        ) : (
+                                            <span className="text-[10px] text-gray-400">{formatLastSeen(u.lastActive)}</span>
+                                        )}
+                                    </p>
                                 </div>
                             </div>
 

@@ -2,17 +2,18 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, query, getDocs, where } from 'firebase/firestore';
 import { COLLECTIONS } from '../constants';
-import { SQLProblem, SQLSubmission } from '../types';
+import { SQLProblem, SQLSubmission, SQLTopicBatch } from '../types';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../App';
-import { Search as SearchIcon, Filter, CheckCircle2, Circle, ArrowRight } from 'lucide-react';
+import { Search as SearchIcon, Filter, CheckCircle2, Circle, ArrowRight, Layers } from 'lucide-react';
 
 export default function SQLDashboard() {
   const { user } = useAuth();
   const [problems, setProblems] = useState<SQLProblem[]>([]);
   const [submissions, setSubmissions] = useState<SQLSubmission[]>([]);
+  const [batches, setBatches] = useState<SQLTopicBatch[]>([]);
   const [loading, setLoading] = useState(true);
-  
+
   const [searchTerm, setSearchTerm] = useState('');
   const [difficultyFilter, setDifficultyFilter] = useState('All');
   const [tagFilter, setTagFilter] = useState('All');
@@ -46,6 +47,11 @@ export default function SQLDashboard() {
           }
     
           setProblems(loaded);
+
+          // Batches
+          const bSnap = await getDocs(query(collection(db, COLLECTIONS.SQL_TOPIC_BATCHES)));
+          setBatches(bSnap.docs.map(d => ({ id: d.id, ...d.data() } as SQLTopicBatch)).sort((a,b) => a.startRange - b.startRange));
+
       } catch (err: any) {
           if (err.message?.includes('Missing or insufficient permissions')) {
               setErrorMsg('Firebase permissions error: Please update your Firestore security rules to allow read/write access to the "sqlProblems" and "sqlSubmissions" collections.');
@@ -114,6 +120,27 @@ export default function SQLDashboard() {
           </div>
         </div>
       </div>
+
+      {!loading && batches.length > 0 && (
+          <div className="my-6">
+              <h2 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Explore by Topic</h2>
+              <div className="flex flex-wrap gap-2">
+                  {batches.map(b => {
+                      const topicProblemsCount = problems.filter(p => (p.problemNumber || 0) >= b.startRange && (p.problemNumber || 0) <= b.endRange).length;
+                      return (
+                          <Link 
+                              key={b.id} 
+                              to={`/sql/topic/${b.id}`}
+                              className="group flex flex-col justify-center bg-white dark:bg-dark-card hover:bg-gray-50 dark:hover:bg-dark-surface border border-gray-200 dark:border-dark-border rounded-xl px-4 py-2.5 shadow-sm transition-colors"
+                          >
+                              <span className="font-bold text-slate-800 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 text-sm whitespace-nowrap">{b.name}</span>
+                              <span className="text-xs text-gray-400 font-medium">{topicProblemsCount} problem{topicProblemsCount !== 1 && 's'}</span>
+                          </Link>
+                      );
+                  })}
+              </div>
+          </div>
+      )}
 
       <div className="flex flex-col sm:flex-row gap-4 mb-6">
          <div className="relative flex-1">
@@ -197,9 +224,9 @@ export default function SQLDashboard() {
                       <td className="px-6 py-4">
                           <div className="flex flex-wrap gap-1.5">
                               {(prob.tags || []).map(tag => (
-                                  <span key={tag} className="px-2 py-0.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-800/30 rounded-md text-[10px] font-semibold whitespace-nowrap">
+                                  <Link to={`/sql/topic/${tag}`} key={tag} className="px-2 py-0.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 hover:bg-blue-100 hover:text-blue-700 dark:hover:bg-blue-900/40 border border-blue-100 dark:border-blue-800/30 rounded-md text-[10px] font-semibold whitespace-nowrap transition-colors">
                                       {tag}
-                                  </span>
+                                  </Link>
                               ))}
                           </div>
                       </td>

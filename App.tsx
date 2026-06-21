@@ -19,6 +19,7 @@ import ProfileView from './pages/ProfileView';
 import SQLDashboard from './pages/SQLDashboard';
 import SQLProblemView from './pages/SQLProblemView';
 import SQLAdminDashboard from './pages/SQLAdminDashboard';
+import SQLTopicView from './pages/SQLTopicView';
 
 // --- Auth Context ---
 
@@ -61,6 +62,35 @@ const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
       document.documentElement.classList.add('dark');
     }
   }, []);
+
+  // Presence Logic
+  useEffect(() => {
+    if (!user) return;
+
+    const updatePresence = () => {
+      const userRef = doc(db, COLLECTIONS.USERS, user.uid);
+      setDoc(userRef, { lastActive: Date.now() }, { merge: true });
+    };
+
+    // Update every 2 minutes to keep "online" status without spamming DB
+    const intervalId = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        updatePresence();
+      }
+    }, 2 * 60 * 1000);
+
+    // Update when tab becomes visible or hidden
+    const handleVisibilityChange = () => {
+      updatePresence();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [user]);
 
   const toggleTheme = () => {
     const newTheme = theme === 'light' ? 'dark' : 'light';
@@ -197,6 +227,7 @@ export default function App() {
           <Route path="/leaderboard" element={<RequireAuth><Layout><Leaderboard /></Layout></RequireAuth>} />
           <Route path="/inbox" element={<RequireAuth><Layout><Inbox /></Layout></RequireAuth>} />
           <Route path="/sql/problem/:slug" element={<RequireAuth><Layout><SQLProblemView /></Layout></RequireAuth>} />
+          <Route path="/sql/topic/:topicId" element={<RequireAuth><Layout><SQLTopicView /></Layout></RequireAuth>} />
           <Route path="/sql" element={<RequireAuth><Layout><SQLDashboard /></Layout></RequireAuth>} />
           <Route path="/" element={<RequireAuth><Layout><UserDashboard /></Layout></RequireAuth>} />
         </Routes>

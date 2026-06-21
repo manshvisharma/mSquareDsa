@@ -2,17 +2,30 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, query, getDocs, doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { COLLECTIONS } from '../constants';
-import { SQLProblem } from '../types';
-import { Plus, Edit2, Trash2, X, FileJson, Check, AlertCircle } from 'lucide-react';
+import { SQLProblem, SQLTopicBatch } from '../types';
+import { Plus, Edit2, Trash2, X, FileJson, Check, AlertCircle, Layers } from 'lucide-react';
 
 export default function SQLAdminDashboard() {
   const [problems, setProblems] = useState<SQLProblem[]>([]);
+  const [batches, setBatches] = useState<SQLTopicBatch[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'problems' | 'batches'>('problems');
+
   const [editingProblem, setEditingProblem] = useState<SQLProblem | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [importJson, setImportJson] = useState('');
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [expectedOutputText, setExpectedOutputText] = useState('');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const [sortField, setSortField] = useState<'problemNumber' | 'title' | 'difficulty'>('problemNumber');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+
+  const [showTopicModal, setShowTopicModal] = useState(false);
+  const [topicStart, setTopicStart] = useState<number | ''>('');
+  const [topicEnd, setTopicEnd] = useState<number | ''>('');
+  const [topicName, setTopicName] = useState('');
+  const [editingBatchId, setEditingBatchId] = useState<string | null>(null);
 
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -24,6 +37,11 @@ export default function SQLAdminDashboard() {
         const snap = await getDocs(q);
         const loaded = snap.docs.map(d => ({ id: d.id, ...d.data() } as SQLProblem));
         setProblems(loaded);
+        setSelectedIds(new Set()); // Reset selections on fetch
+
+        // Fetch batches as well
+        const bSnap = await getDocs(query(collection(db, COLLECTIONS.SQL_TOPIC_BATCHES)));
+        setBatches(bSnap.docs.map(d => ({ id: d.id, ...d.data() } as SQLTopicBatch)));
     } catch (err: any) {
         if (err.message?.includes('Missing or insufficient permissions')) {
             setErrorMsg('Firebase permissions error: Please update your Firestore security rules to allow read/write access to the "sqlProblems" collection.');
@@ -181,6 +199,144 @@ export default function SQLAdminDashboard() {
     }
   };
 
+  const handleBulkDelete = async () => {
+      if (!window.confirm(`Are you sure you want to delete ${selectedIds.size} problems?`)) return;
+      try {
+          for (const id of selectedIds) {
+              await deleteDoc(doc(db, COLLECTIONS.SQL_PROBLEMS, id));
+          }
+          fetchProblems();
+      } catch (err: any) {
+          alert("Error bulk deleting: " + err.message);
+      }
+  };
+
+  const handleBulkStatusChange = async (published: boolean) => {
+      try {
+          for (const id of selectedIds) {
+              await setDoc(doc(db, COLLECTIONS.SQL_PROBLEMS, id), { published }, { merge: true });
+          }
+          fetchProblems();
+      } catch (err: any) {
+          alert("Error updating status: " + err.message);
+      }
+  };
+
+  const toggleSelectAll = () => {
+      if (selectedIds.size === problems.length) {
+          setSelectedIds(new Set());
+      } else {
+          setSelectedIds(new Set(problems.map(p => p.id)));
+      }
+  };
+
+  const toggleSelect = (id: string) => {
+      const newSet = new Set(selectedIds);
+      if (newSet.has(id)) newSet.delete(id);
+      else newSet.add(id);
+      setSelectedIds(newSet);
+  };
+
+  const handleSaveBatch = async () => {
+    if (topicStart === '' || topicEnd === '' || !topicName.trim()) {
+        return alert("Please enter valid start number, end number, and topic name.");
+    }
+    const start = Number(topicStart);
+    const end = Number(topicEnd);
+    
+    if (start > end) {
+        return alert("Start number cannot be greater than end number.");
+    }
+
+    // Check count of problems that will fall into this batch
+    const problemCount = problems.filter(p => (p.problemNumber || 0) >= start && (p.problemNumber || 0) <= end).length;
+    
+    // Instead of assigning to problems, we store the batch logic in SQL_TOPIC_BATCHES
+    const batchId = editingBatchId || doc(collection(db, COLLECTIONS.SQL_TOPIC_BATCHES)).id;
+    
+    const batchDoc: SQLTopicBatch = {
+        name: topicName.trim(),
+        startRange: start,
+        endRange: end
+    };
+
+    try {
+        await setDoc(doc(db, COLLECTIONS.SQL_TOPIC_BATCHES, batchId), batchDoc);
+        
+        // Remove 'category' from any matching problems to prevent old topic logic overlap
+        // We do this silently in background
+        const toUpdate = problems.filter(p => (p.problemNumber || 0) >= start && (p.problemNumber || 0) <= end && p.category);
+        for(const p of toUpdate) {
+            await setDoc(doc(db, COLLECTIONS.SQL_PROBLEMS, p.id), { category: null }, { merge: true });
+        }
+        
+        setShowTopicModal(false);
+        setTopicStart('');
+        setTopicEnd('');
+        setTopicName('');
+        setEditingBatchId(null);
+        alert(`Saved batch topic. Covers ${problemCount} current problems.`);
+        fetchProblems(); // refetches both problems and batches
+    } catch (err: any) {
+        alert("Error saving batch: " + err.message);
+    }
+  };
+
+  const handleDeleteBatch = async (batchId: string) => {
+    if (!window.confirm("Are you sure you want to delete this batch? (Problems will not be deleted)")) return;
+    try {
+        await deleteDoc(doc(db, COLLECTIONS.SQL_TOPIC_BATCHES, batchId));
+        fetchProblems();
+    } catch (err: any) {
+        alert("Error deleting batch: " + err.message);
+    }
+  };
+
+  const openNewBatchModal = () => {
+      setEditingBatchId(null);
+      setTopicName('');
+      setTopicStart('');
+      setTopicEnd('');
+      setShowTopicModal(true);
+  };
+
+  const openEditBatchModal = (b: SQLTopicBatch) => {
+      setEditingBatchId(b.id!);
+      setTopicName(b.name);
+      setTopicStart(b.startRange);
+      setTopicEnd(b.endRange);
+      setShowTopicModal(true);
+  };
+
+  const handleSort = (field: 'problemNumber' | 'title' | 'difficulty') => {
+      if (sortField === field) {
+          setSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
+      } else {
+          setSortField(field);
+          setSortDir('asc');
+      }
+  };
+
+  const sortedProblems = [...problems].sort((a, b) => {
+      let valA = a[sortField];
+      let valB = b[sortField];
+      if (sortField === 'title') {
+          valA = String(valA || '').toLowerCase();
+          valB = String(valB || '').toLowerCase();
+      }
+      
+      // Handle difficulty custom sort: Easy < Medium < Hard
+      if (sortField === 'difficulty') {
+          const rank = { 'Easy': 1, 'Medium': 2, 'Hard': 3 };
+          valA = rank[valA as keyof typeof rank] || 0;
+          valB = rank[valB as keyof typeof rank] || 0;
+      }
+
+      if (valA < valB) return sortDir === 'asc' ? -1 : 1;
+      if (valA > valB) return sortDir === 'asc' ? 1 : -1;
+      return 0;
+  });
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -188,20 +344,46 @@ export default function SQLAdminDashboard() {
           <h1 className="text-2xl font-bold text-slate-800 dark:text-white">SQL Practice Admin</h1>
           <p className="text-slate-500 dark:text-slate-400">Manage interactive SQL problems</p>
         </div>
-        <div className="flex gap-3">
-            <button 
-                onClick={() => setShowImportDialog(true)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-dark-surface dark:hover:bg-dark-border text-slate-700 dark:text-slate-200 rounded-lg font-medium transition-colors flex items-center gap-2"
-            >
-                <FileJson size={18} /> Bulk Import
-            </button>
-            <button 
-                onClick={openNewModal}
-                className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2 shadow-sm"
-            >
-                <Plus size={18} /> Add Problem
-            </button>
+        <div className="flex gap-3 text-sm">
+            {activeTab === 'batches' ? (
+                <button 
+                    onClick={openNewBatchModal}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2 shadow-sm"
+                >
+                    <Plus size={16} /> Create Batch Topic
+                </button>
+            ) : (
+                <>
+                    <button 
+                        onClick={() => setShowImportDialog(true)}
+                        className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-dark-surface dark:hover:bg-dark-border text-slate-700 dark:text-slate-200 rounded-lg font-medium transition-colors flex items-center gap-2"
+                    >
+                        <FileJson size={18} /> Bulk Import
+                    </button>
+                    <button 
+                        onClick={openNewModal}
+                        className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2 shadow-sm"
+                    >
+                        <Plus size={18} /> Add Problem
+                    </button>
+                </>
+            )}
         </div>
+      </div>
+
+      <div className="flex gap-4 border-b border-gray-200 dark:border-dark-border">
+          <button 
+              onClick={() => setActiveTab('problems')} 
+              className={`pb-3 text-sm font-bold transition-colors ${activeTab === 'problems' ? 'text-primary-600 dark:text-primary-400 border-b-2 border-primary-600 dark:border-primary-400' : 'text-gray-500 hover:text-slate-800 dark:hover:text-gray-200'}`}
+          >
+              Problems ({problems.length})
+          </button>
+          <button 
+              onClick={() => setActiveTab('batches')} 
+              className={`pb-3 text-sm font-bold transition-colors ${activeTab === 'batches' ? 'text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400' : 'text-gray-500 hover:text-slate-800 dark:hover:text-gray-200'}`}
+          >
+              Topic Batches ({batches.length})
+          </button>
       </div>
 
       {errorMsg ? (
@@ -210,25 +392,94 @@ export default function SQLAdminDashboard() {
           <p className="mt-2 text-sm opacity-80">{errorMsg}</p>
         </div>
       ) : loading ? (
-        <div className="text-center p-12 text-gray-500">Loading problems...</div>
+        <div className="text-center p-12 text-gray-500">Loading data...</div>
+      ) : activeTab === 'batches' ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {batches.length === 0 && (
+                <div className="col-span-full p-8 text-center text-gray-500 border border-dashed border-gray-300 dark:border-dark-border rounded-xl">
+                    No topic batches created yet.
+                </div>
+            )}
+            {batches.map(b => {
+                const count = problems.filter(p => (p.problemNumber || 0) >= b.startRange && (p.problemNumber || 0) <= b.endRange).length;
+                return (
+                    <div key={b.id} className="bg-white dark:bg-dark-card border border-gray-200 dark:border-dark-border rounded-xl p-5 shadow-sm relative group">
+                        <div className="flex justify-between items-start mb-2">
+                            <h3 className="font-bold text-slate-800 dark:text-white text-lg flex items-center gap-2">
+                                <Layers size={18} className="text-indigo-500" />
+                                {b.name}
+                            </h3>
+                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button onClick={() => openEditBatchModal(b)} className="p-1.5 text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-md hover:bg-gray-100 dark:hover:bg-dark-surface"><Edit2 size={14}/></button>
+                                <button onClick={() => handleDeleteBatch(b.id!)} className="p-1.5 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20"><Trash2 size={14}/></button>
+                            </div>
+                        </div>
+                        <div className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                            From problem #<span className="font-bold text-slate-700 dark:text-gray-300">{b.startRange}</span> to #<span className="font-bold text-slate-700 dark:text-gray-300">{b.endRange}</span>
+                        </div>
+                        <div className="bg-gray-50 dark:bg-dark-surface px-3 py-2 rounded-lg inline-flex items-center gap-2 text-sm font-medium text-slate-600 dark:text-slate-300 border border-gray-100 dark:border-dark-border">
+                            <span>{count}</span> problems matched
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
       ) : (
         <div className="bg-white dark:bg-dark-card rounded-xl shadow-sm border border-gray-200 dark:border-dark-border overflow-hidden">
+          {selectedIds.size > 0 && (
+              <div className="bg-primary-50 dark:bg-primary-900/20 px-6 py-3 border-b border-primary-100 dark:border-primary-900/30 flex items-center justify-between">
+                  <span className="text-primary-700 dark:text-primary-400 font-bold text-sm">{selectedIds.size} selected</span>
+                  <div className="flex gap-2">
+                      <button onClick={() => handleBulkStatusChange(true)} className="px-3 py-1.5 bg-white dark:bg-dark-surface border border-gray-200 dark:border-dark-border rounded text-sm font-medium text-emerald-600 dark:text-emerald-400 hover:bg-gray-50 dark:hover:bg-dark-border">Publish Selected</button>
+                      <button onClick={() => handleBulkStatusChange(false)} className="px-3 py-1.5 bg-white dark:bg-dark-surface border border-gray-200 dark:border-dark-border rounded text-sm font-medium text-amber-600 dark:text-amber-400 hover:bg-gray-50 dark:hover:bg-dark-border">Draft Selected</button>
+                      <button onClick={handleBulkDelete} className="px-3 py-1.5 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-900/30 rounded text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40">Delete Selected</button>
+                  </div>
+              </div>
+          )}
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm whitespace-nowrap">
               <thead className="bg-gray-50 dark:bg-dark-surface border-b border-gray-200 dark:border-dark-border">
                 <tr>
-                  <th className="px-6 py-4 font-semibold text-slate-600 dark:text-slate-300">Title / Slug</th>
-                  <th className="px-6 py-4 font-semibold text-slate-600 dark:text-slate-300">Difficulty</th>
+                  <th className="px-6 py-4 w-12">
+                      <input 
+                          type="checkbox" 
+                          checked={selectedIds.size === sortedProblems.length && sortedProblems.length > 0} 
+                          onChange={toggleSelectAll}
+                          className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 w-4 h-4"
+                      />
+                  </th>
+                  <th className="px-6 py-4 font-semibold text-slate-600 dark:text-slate-300">
+                      <div className="flex items-center gap-2">
+                        <span onClick={() => handleSort('problemNumber')} className="cursor-pointer hover:text-slate-800 dark:hover:text-white">
+                            No. {sortField === 'problemNumber' && (sortDir === 'asc' ? '↑' : '↓')}
+                        </span>
+                        <span>/</span>
+                        <span onClick={() => handleSort('title')} className="cursor-pointer hover:text-slate-800 dark:hover:text-white">
+                            Title / Slug {sortField === 'title' && (sortDir === 'asc' ? '↑' : '↓')}
+                        </span>
+                      </div>
+                  </th>
+                  <th onClick={() => handleSort('difficulty')} className="px-6 py-4 font-semibold text-slate-600 dark:text-slate-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-dark-border transition-colors">
+                      Difficulty {sortField === 'difficulty' && (sortDir === 'asc' ? '↑' : '↓')}
+                  </th>
                   <th className="px-6 py-4 font-semibold text-slate-600 dark:text-slate-300">DB Type</th>
                   <th className="px-6 py-4 font-semibold text-slate-600 dark:text-slate-300">Status</th>
                   <th className="px-6 py-4 font-semibold text-slate-600 dark:text-slate-300 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-dark-border">
-                {problems.map(prob => (
-                  <tr key={prob.id} className="hover:bg-gray-50 dark:hover:bg-dark-surface/50 transition-colors">
+                {sortedProblems.map(prob => (
+                  <tr key={prob.id} className={`transition-colors ${selectedIds.has(prob.id) ? 'bg-primary-50/50 dark:bg-primary-900/10' : 'hover:bg-gray-50 dark:hover:bg-dark-surface/50'}`}>
                     <td className="px-6 py-4">
-                      <div className="font-bold text-slate-800 dark:text-gray-200">
+                        <input 
+                            type="checkbox" 
+                            checked={selectedIds.has(prob.id)} 
+                            onChange={() => toggleSelect(prob.id)}
+                            className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 w-4 h-4"
+                        />
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="font-bold text-slate-800 dark:text-gray-200 cursor-pointer" onClick={() => openEditModal(prob)}>
                         <span className="text-gray-500 mr-2">{prob.problemNumber || 0}.</span>
                         {prob.title}
                       </div>
@@ -264,7 +515,7 @@ export default function SQLAdminDashboard() {
                   </tr>
                 ))}
                 {problems.length === 0 && (
-                    <tr><td colSpan={5} className="p-8 text-center text-gray-500">No SQL problems found.</td></tr>
+                    <tr><td colSpan={6} className="p-8 text-center text-gray-500">No SQL problems found.</td></tr>
                 )}
               </tbody>
             </table>
@@ -284,6 +535,40 @@ export default function SQLAdminDashboard() {
             <div className="flex gap-3 justify-center">
               <button type="button" onClick={() => setProblemToDelete(null)} className="px-5 py-2.5 rounded-lg font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-dark-border transition-colors w-full">Cancel</button>
               <button onClick={confirmDelete} className="px-5 py-2.5 rounded-lg font-bold text-white bg-red-600 hover:bg-red-700 shadow-md w-full">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Batch Topic Modal */}
+      {showTopicModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-dark-card w-full max-w-md rounded-2xl p-6 shadow-2xl border border-gray-200 dark:border-dark-border">
+            <h2 className="text-xl font-bold dark:text-white mb-4">{editingBatchId ? 'Edit Batch Topic' : 'Create Batch Topic'}</h2>
+            <p className="text-sm text-gray-500 mb-4">Define a topic that groups a range of existing problems. This helps users discover problems by topic without needing to tag every problem individually.</p>
+            
+            <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Start No.</label>
+                        <input type="number" value={topicStart} onChange={e => setTopicStart(e.target.value ? Number(e.target.value) : '')} className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-dark-border bg-white dark:bg-dark-surface dark:text-white focus:ring-2 focus:ring-primary-500" placeholder="e.g. 1" />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">End No.</label>
+                        <input type="number" value={topicEnd} onChange={e => setTopicEnd(e.target.value ? Number(e.target.value) : '')} className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-dark-border bg-white dark:bg-dark-surface dark:text-white focus:ring-2 focus:ring-primary-500" placeholder="e.g. 5" />
+                    </div>
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Topic Name</label>
+                    <input type="text" value={topicName} onChange={e => setTopicName(e.target.value)} className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-dark-border bg-white dark:bg-dark-surface dark:text-white focus:ring-2 focus:ring-primary-500" placeholder="e.g. DML or Joins" />
+                </div>
+            </div>
+
+            <div className="flex gap-3 justify-end mt-6">
+              <button type="button" onClick={() => setShowTopicModal(false)} className="px-5 py-2.5 rounded-lg font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-dark-border transition-colors">Cancel</button>
+              <button onClick={handleSaveBatch} className="px-5 py-2.5 rounded-lg font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-md">
+                {editingBatchId ? 'Save Changes' : 'Create Batch'}
+              </button>
             </div>
           </div>
         </div>

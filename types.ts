@@ -46,6 +46,7 @@ export interface UserProfile {
   lastSolvedDate: string | null; // YYYY-MM-DD
   followers?: string[];
   following?: string[];
+  typingTo?: string | null;
   privacySettings?: {
       hideStats?: boolean;
       hideActivity?: boolean;
@@ -62,6 +63,8 @@ export interface DirectMessage {
   imageUrl?: string;
   timestamp: number;
   read: boolean;
+  readAt?: number;
+  reactions?: Record<string, string>;
 }
 
 export interface Sheet {
@@ -121,6 +124,13 @@ export interface DailyActivity {
 }
 
 // SQL Practice Types
+export interface SQLTopicBatch {
+  id?: string;
+  name: string;
+  startRange: number;
+  endRange: number;
+}
+
 export interface SQLProblem {
   id: string; // Document ID
   problemNumber: number;

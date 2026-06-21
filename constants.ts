@@ -21,7 +21,8 @@ export const COLLECTIONS = {
   TYPING_STATUS: 'typingStatus',
   SQL_PROBLEMS: 'sqlProblems',
   SQL_SUBMISSIONS: 'sqlSubmissions',
-  SQL_DRAFTS: 'sqlDrafts'
+  SQL_DRAFTS: 'sqlDrafts',
+  SQL_TOPIC_BATCHES: 'sqlTopicBatches'
 };
 
 export const ADMIN_EMAILS = [
