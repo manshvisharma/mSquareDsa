@@ -4,7 +4,8 @@ import { db } from '../firebase';
 import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, addDoc, getDocs } from 'firebase/firestore';
 import { COLLECTIONS } from '../constants';
 import { DirectMessage, UserProfile } from '../types';
-import { MessageCircle, Trash2, Send, ArrowLeft } from 'lucide-react';
+import { MessageCircle, Trash2, Send, ArrowLeft, Smile, Plus } from 'lucide-react';
+import EmojiPicker, { Theme } from 'emoji-picker-react';
 import { Link, useSearchParams } from 'react-router-dom';
 
 export const Inbox = () => {
@@ -19,7 +20,27 @@ export const Inbox = () => {
     const [searchParams] = useSearchParams();
     const [msgToDelete, setMsgToDelete] = useState<string | null>(null);
     const [expandedImage, setExpandedImage] = useState<string | null>(null);
+    const [showEmojiPicker, setShowEmojiPicker] = useState<boolean>(false);
+    const [reactionPickerMsgId, setReactionPickerMsgId] = useState<string | null>(null);
     const bottomRef = useRef<HTMLDivElement>(null);
+
+    const defaultReactions = ['❤️', '👍', '😂', '😮', '🥺', '🙏'];
+    const [recentReactions, setRecentReactions] = useState<string[]>(defaultReactions);
+
+    useEffect(() => {
+        try {
+            const stored = localStorage.getItem('recentReactions');
+            if (stored) setRecentReactions(JSON.parse(stored));
+        } catch (e) {}
+    }, []);
+
+    const handleReactionSelect = (msgId: string, emoji: string) => {
+        const newRecent = [emoji, ...recentReactions.filter(e => e !== emoji)].slice(0, 6);
+        setRecentReactions(newRecent);
+        localStorage.setItem('recentReactions', JSON.stringify(newRecent));
+        toggleReaction(msgId, emoji);
+    };
+
 
     const formatLastSeen = (timestamp?: number) => {
         if (!timestamp) return 'Offline';
@@ -201,20 +222,25 @@ export const Inbox = () => {
 
     const handleSend = async () => {
         if (!user || !profile || !selectedUser || (!replyText.trim() && !pendingImage)) return;
+        
+        const currentText = replyText.trim();
+        const currentImage = pendingImage;
+        
+        setReplyText('');
+        setPendingImage(null);
+        setDoc(doc(db, COLLECTIONS.USERS, user.uid), { typingTo: null }, { merge: true });
+
         try {
             await addDoc(collection(db, COLLECTIONS.MESSAGES), {
                 senderId: user.uid,
                 senderName: profile.displayName || profile.username || profile.email?.split('@')[0] || 'Anonymous',
                 receiverId: selectedUser,
-                content: replyText.trim(),
-                imageUrl: pendingImage || null,
+                content: currentText,
+                imageUrl: currentImage || null,
                 timestamp: Date.now(),
                 read: false,
                 reactions: {}
             });
-            setReplyText('');
-            setPendingImage(null);
-            setDoc(doc(db, COLLECTIONS.USERS, user.uid), { typingTo: null }, { merge: true });
         } catch (e) { console.error(e); }
     };
 
@@ -227,10 +253,15 @@ export const Inbox = () => {
         const currentReactions = msg.reactions || {};
         const newReactions = { ...currentReactions };
         
-        if (newReactions[user.uid] === emoji) {
-            delete newReactions[user.uid]; // Remove if clicked again
+        // Find if *anyone* has this emoji. If so, remove all users who have this emoji.
+        const usersWithEmoji = Object.keys(newReactions).filter(uid => newReactions[uid] === emoji);
+        
+        if (usersWithEmoji.length > 0) {
+            // Remove it
+            usersWithEmoji.forEach(uid => delete newReactions[uid]);
         } else {
-            newReactions[user.uid] = emoji; // Add or change reaction
+            // Add it for the current user
+            newReactions[user.uid] = emoji;
         }
 
         try {
@@ -362,60 +393,89 @@ export const Inbox = () => {
                                                     <span className="text-xs font-medium text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-dark-surface px-3 py-1 rounded-full shadow-sm">{msgDate}</span>
                                                 </div>
                                             )}
-                                            <div className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                                                <div className={`group relative max-w-[75%] rounded-2xl px-4 py-2 shadow-sm ${isMe ? 'bg-primary-600 text-white rounded-br-sm' : 'bg-gray-100 dark:bg-dark-surface text-slate-800 dark:text-gray-100 rounded-bl-sm border border-gray-200 dark:border-dark-border'}`}>
-                                                    {msg.imageUrl && (
-                                                        <img 
-                                                            src={msg.imageUrl} 
-                                                            alt="Attached" 
-                                                            onClick={() => setExpandedImage(msg.imageUrl!)}
-                                                            className="w-48 h-48 sm:w-64 sm:h-64 object-cover rounded-xl mt-1 mb-2 cursor-zoom-in border border-black/10 dark:border-white/10" 
-                                                        />
-                                                    )}
-                                                    {msg.content && <p className="whitespace-pre-wrap word-break text-[15px]">{msg.content}</p>}
-                                                    <div className={`text-[10px] mt-1 flex items-center gap-1 ${isMe ? 'justify-end text-primary-200' : 'justify-start text-gray-400'}`}>
-                                                        <span>{new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                                                        {isMe && (
-                                                            <span className="flex items-center" title={msg.read && msg.readAt ? `Seen ${new Date(msg.readAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}` : 'Sent'}>
-                                                                {msg.read ? (
-                                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-blue-300 drop-shadow-md"><path d="M18 6L7 17l-5-5"/><path d="M22 10l-3.5 3.5"/></svg>
-                                                                ) : (
-                                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="opacity-70"><path d="M20 6L9 17l-5-5"/></svg>
-                                                                )}
-                                                            </span>
-                                                        )}
-                                                    </div>
+                                            <div className={`w-full flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                                                <div className={`group flex items-center gap-2 max-w-[85%] ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
                                                     
-                                                    {msg.reactions && Object.keys(msg.reactions).length > 0 && (
-                                                        <div className={`absolute -bottom-3 ${isMe ? 'right-2' : 'left-2'} flex gap-0.5 bg-white dark:bg-dark-card border border-gray-100 dark:border-dark-border rounded-full px-1.5 py-0.5 shadow-sm text-[12px] select-none z-10`}>
-                                                            {Array.from(new Set(Object.values(msg.reactions))).map((emoji, idx) => (
-                                                                <span key={idx} className="cursor-default" title="Reactions" style={{fontFamily: '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif'}}>{emoji as string}</span>
-                                                            ))}
-                                                            {Object.keys(msg.reactions).length > 1 && (
-                                                                <span className="text-[10px] font-bold text-gray-500 ml-0.5 bg-gray-100 dark:bg-dark-surface rounded-full w-4 h-4 flex items-center justify-center">{Object.keys(msg.reactions).length}</span>
+                                                    {/* Message Bubble */}
+                                                    <div className={`relative px-4 py-2 shadow-sm rounded-2xl ${isMe ? 'bg-primary-600 text-white rounded-br-sm' : 'bg-gray-100 dark:bg-dark-surface text-slate-800 dark:text-gray-100 rounded-bl-sm border border-gray-200 dark:border-dark-border'}`}>
+                                                        {msg.imageUrl && (
+                                                            <img 
+                                                                src={msg.imageUrl} 
+                                                                alt="Attached" 
+                                                                onClick={() => setExpandedImage(msg.imageUrl!)}
+                                                                className="w-48 h-48 sm:w-64 sm:h-64 object-cover rounded-xl mt-1 mb-2 cursor-zoom-in border border-black/10 dark:border-white/10" 
+                                                            />
+                                                        )}
+                                                        {msg.content && <p className="whitespace-pre-wrap word-break text-[15px]">{msg.content}</p>}
+                                                        <div className={`text-[10px] mt-1 flex items-center gap-1 ${isMe ? 'justify-end text-primary-200' : 'justify-start text-gray-400'}`}>
+                                                            <span>{new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                                                            {isMe && (
+                                                                <span className="flex items-center gap-0.5 ml-1" title={msg.read && msg.readAt ? `Seen ${new Date(msg.readAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}` : 'Sent'}>
+                                                                    {msg.read ? (
+                                                                        <span className="flex items-center text-blue-300 drop-shadow-sm gap-0.5">
+                                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L7 17l-5-5"/><path d="M22 10l-3.5 3.5"/></svg>
+                                                                            <span className="font-medium text-[9px] uppercase tracking-wider">Seen {msg.readAt ? new Date(msg.readAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}</span>
+                                                                        </span>
+                                                                    ) : (
+                                                                        <span className="flex items-center opacity-70 gap-0.5">
+                                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+                                                                            <span className="font-medium text-[9px] uppercase tracking-wider">Sent</span>
+                                                                        </span>
+                                                                    )}
+                                                                </span>
                                                             )}
                                                         </div>
-                                                    )}
-
-                                                    <div className={`absolute top-[50%] -translate-y-[50%] ${isMe ? '-left-36' : '-right-36'} opacity-0 group-hover:opacity-100 transition-opacity bg-white dark:bg-dark-card border border-gray-100 dark:border-dark-border rounded-full px-2 py-1 shadow-md flex items-center gap-1 z-20`}>
-                                                        {['❤️', '👍', '😂', '😮', '😢', '🙏'].map(em => (
-                                                            <button 
-                                                                key={em} 
-                                                                onClick={() => toggleReaction(msg.id, em)} 
-                                                                className={`text-[16px] hover:scale-125 hover:-translate-y-1 transition-transform p-0.5 rounded-full ${msg.reactions?.[user?.uid || ''] === em ? 'bg-primary-50 dark:bg-primary-900/40 ring-1 ring-primary-200' : ''}`}
-                                                                title={em}
-                                                                style={{fontFamily: '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif'}}
-                                                            >
-                                                                {em}
-                                                            </button>
-                                                        ))}
+                                                        
+                                                        {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                                                            <div className={`absolute -bottom-3 ${isMe ? 'right-2' : 'left-2'} flex gap-0.5 bg-white dark:bg-dark-card border border-gray-100 dark:border-dark-border rounded-full px-1.5 py-0.5 shadow-sm text-[12px] select-none z-10`}>
+                                                                {Array.from(new Set(Object.values(msg.reactions))).map((emoji, idx) => (
+                                                                    <button key={idx} onClick={() => toggleReaction(msg.id, emoji as string)} className="cursor-pointer hover:scale-110 transition-transform" title="Remove Reaction" style={{fontFamily: '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif'}}>{emoji as string}</button>
+                                                                ))}
+                                                                {Object.keys(msg.reactions).length > 1 && (
+                                                                    <span className="text-[10px] font-bold text-gray-500 ml-0.5 bg-gray-100 dark:bg-dark-surface rounded-full w-4 h-4 flex items-center justify-center">{Object.keys(msg.reactions).length}</span>
+                                                                )}
+                                                            </div>
+                                                        )}
                                                     </div>
 
-                                                    {isMe && (
-                                                      <button onClick={() => setMsgToDelete(msg.id)} className="absolute top-2 -left-8 p-1 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity z-20">
-                                                          <Trash2 size={14} />
-                                                      </button>
-                                                    )}
+                                                    {/* Hover Actions Menu */}
+                                                    <div className={`opacity-0 group-hover:opacity-100 transition-opacity flex items-center shrink-0 px-1 relative`}>
+                                                         <div className="flex bg-white dark:bg-dark-card border border-gray-200 dark:border-dark-border rounded-full shadow-sm px-1.5 py-1 gap-0.5 z-20">
+                                                             {recentReactions.slice(0, 4).map(em => (
+                                                                 <button
+                                                                    key={em}
+                                                                    onClick={() => handleReactionSelect(msg.id, em)}
+                                                                    className={`text-[14px] hover:scale-125 hover:-translate-y-1 transition-transform p-1 rounded-full ${msg.reactions?.[user?.uid || ''] === em ? 'bg-primary-50 dark:bg-primary-900/40 ring-1 ring-primary-200' : ''}`}
+                                                                 >{em}</button>
+                                                             ))}
+                                                             <button 
+                                                                 onClick={() => setReactionPickerMsgId(msg.id)} 
+                                                                 className="text-gray-400 hover:text-primary-500 ml-1 pl-1 border-l border-gray-200 dark:border-dark-border flex items-center justify-center cursor-pointer"
+                                                             >
+                                                                 <Plus size={16} />
+                                                             </button>
+                                                             {isMe && (
+                                                                 <button onClick={() => setMsgToDelete(msg.id)} className="text-gray-400 hover:text-red-500 ml-1 pl-1.5 border-l border-gray-200 dark:border-dark-border flex items-center justify-center cursor-pointer">
+                                                                     <Trash2 size={16} />
+                                                                 </button>
+                                                             )}
+                                                         </div>
+                                                         {reactionPickerMsgId === msg.id && (
+                                                             <div className={`absolute bottom-full mb-2 ${isMe ? 'right-0' : 'left-0'} z-50 animate-in fade-in zoom-in-95 duration-200`}>
+                                                                 <div className="fixed inset-0 z-40" onClick={() => setReactionPickerMsgId(null)} />
+                                                                 <div className="relative z-50 shadow-2xl rounded-xl overflow-hidden border border-gray-200 dark:border-dark-border">
+                                                                     <EmojiPicker 
+                                                                         theme={Theme.AUTO}
+                                                                         onEmojiClick={(emojiData) => {
+                                                                             handleReactionSelect(msg.id, emojiData.emoji);
+                                                                             setReactionPickerMsgId(null);
+                                                                         }}
+                                                                     />
+                                                                 </div>
+                                                             </div>
+                                                         )}
+                                                    </div>
+
                                                 </div>
                                             </div>
                                         </React.Fragment>
@@ -446,7 +506,28 @@ export const Inbox = () => {
                                     </button>
                                 </div>
                             )}
-                            <div className="flex items-end gap-2 bg-gray-50 dark:bg-dark-surface rounded-xl border border-gray-200 dark:border-dark-border p-2 focus-within:ring-2 focus-within:ring-primary-500 transition-all">
+                            <div className="flex items-end gap-2 bg-gray-50 dark:bg-dark-surface rounded-xl border border-gray-200 dark:border-dark-border p-2 focus-within:ring-2 focus-within:ring-primary-500 transition-all relative">
+                                <button 
+                                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                                    className="p-2 text-gray-400 hover:text-primary-600 transition-colors"
+                                    title="Add Emoji"
+                                >
+                                    <Smile size={20} />
+                                </button>
+                                
+                                {showEmojiPicker && (
+                                    <div className="absolute bottom-16 left-0 z-50 animate-in fade-in slide-in-from-bottom-2">
+                                        <div className="fixed inset-0 z-40" onClick={() => setShowEmojiPicker(false)} />
+                                        <div className="relative z-50 shadow-2xl rounded-xl overflow-hidden border border-gray-200 dark:border-dark-border">
+                                            <EmojiPicker 
+                                                theme={Theme.AUTO}
+                                                onEmojiClick={(emojiData) => {
+                                                    setReplyText(prev => prev + emojiData.emoji);
+                                                }}
+                                            />
+                                        </div>
+                                    </div>
+                                )}
                                 <label className="cursor-pointer p-2 text-gray-400 hover:text-primary-600 transition-colors">
                                     <input 
                                         type="file" 
@@ -464,7 +545,11 @@ export const Inbox = () => {
                                 </label>
                                 <textarea 
                                     value={replyText}
-                                    onChange={e => handleTyping(e.target.value)}
+                                    onChange={e => {
+                                        handleTyping(e.target.value);
+                                        e.target.style.height = 'auto';
+                                        e.target.style.height = Math.min(e.target.scrollHeight, 128) + 'px';
+                                    }}
                                     onPaste={async (e) => {
                                         const items = e.clipboardData.items;
                                         for (let i = 0; i < items.length; i++) {
@@ -483,6 +568,7 @@ export const Inbox = () => {
                                         if (e.key === 'Enter' && !e.shiftKey) {
                                             e.preventDefault();
                                             handleSend();
+                                            e.currentTarget.style.height = 'auto';
                                         }
                                     }}
                                     placeholder="Message... (Paste images)"
