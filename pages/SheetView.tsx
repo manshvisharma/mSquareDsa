@@ -304,7 +304,7 @@ export default function SheetView() {
     setIsNoteModalOpen(false);
   };
 
-  const handleAddToRevision = async (prob: FullProblem, topicTitle: string) => {
+  const handleAddToRevision = async (prob: FullProblem, topicTitle: string, subPatternName?: string) => {
     if (!user || !sheet) return;
 
     const now = Date.now();
@@ -315,6 +315,7 @@ export default function SheetView() {
       sheetId: sheet.id,
       sheetName: sheet.title,
       topicName: topicTitle,
+      subPatternName: subPatternName || '',
       problemTitle: prob.title,
       platform: prob.platform,
       url: prob.url,
@@ -702,7 +703,7 @@ export default function SheetView() {
                                                               if (!rev) {
                                                                 return (
                                                                   <button
-                                                                      onClick={() => handleAddToRevision(prob, topic.title)}
+                                                                      onClick={() => handleAddToRevision(prob, topic.title, sp.title)}
                                                                       className="flex items-center gap-1.5 px-2 py-0.5 rounded border border-purple-200 text-purple-600 dark:border-purple-800 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/30 text-[10px] uppercase font-bold transition-colors shadow-sm bg-white dark:bg-dark-surface"
                                                                   >
                                                                       <Repeat size={12} /> Add to Revision

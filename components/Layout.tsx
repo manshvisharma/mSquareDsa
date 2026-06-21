@@ -113,7 +113,8 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       (r) =>
         !r.revisionCycleCompleted &&
         r.nextRevisionDate &&
-        r.nextRevisionDate <= TODAY_MS,
+        new Date(r.nextRevisionDate).setHours(0, 0, 0, 0) === TODAY_MS &&
+        (!r.lastRevisionDate || new Date(r.lastRevisionDate).setHours(0, 0, 0, 0) !== TODAY_MS)
     ).length;
   }, [profile?.revisions]);
 

@@ -6,6 +6,7 @@ export interface RevisionData {
   sheetId: string;
   sheetName: string;
   topicName: string;
+  subPatternName?: string;
   problemTitle: string;
   difficulty?: string;
   platform?: string;
