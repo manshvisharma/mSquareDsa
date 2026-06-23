@@ -4,16 +4,19 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
+    "dev": "tsx server.ts",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "start": "node dist/server.cjs",
     "preview": "vite preview"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.3",
+    "@google/genai": "^2.9.0",
     "@monaco-editor/react": "^4.7.0",
     "@tailwindcss/typography": "^0.5.20",
     "canvas-confetti": "^1.9.2",
     "emoji-picker-react": "^4.19.1",
+    "express": "^5.2.1",
     "firebase": "^10.8.0",
     "lucide-react": "^0.344.0",
     "react": "^18.2.0",
@@ -25,12 +28,15 @@
   },
   "devDependencies": {
     "@types/canvas-confetti": "^1.6.4",
+    "@types/express": "^5.0.6",
     "@types/react": "^18.2.55",
     "@types/react-dom": "^18.2.19",
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.17",
+    "esbuild": "^0.28.1",
     "postcss": "^8.4.35",
     "tailwindcss": "^3.4.1",
+    "tsx": "^4.22.4",
     "typescript": "^5.2.2",
     "vite": "^5.1.0"
   }

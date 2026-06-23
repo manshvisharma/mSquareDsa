@@ -1,5 +1,6 @@
 {
   "name": "MSquare - Coding Tracker",
   "description": "A comprehensive coding practice tracker with Admin management, progress analytics, and gamification.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

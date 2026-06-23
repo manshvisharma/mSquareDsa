@@ -22,12 +22,17 @@ export const COLLECTIONS = {
   SQL_PROBLEMS: 'sqlProblems',
   SQL_SUBMISSIONS: 'sqlSubmissions',
   SQL_DRAFTS: 'sqlDrafts',
-  SQL_TOPIC_BATCHES: 'sqlTopicBatches'
+  SQL_TOPIC_BATCHES: 'sqlTopicBatches',
+  LEARN_COURSES: 'learnCourses',
+  LEARN_TOPICS: 'learnTopics',
+  LEARN_LESSONS: 'learnLessons',
+  LEARN_SLIDES: 'learnSlides'
 };
 
 export const ADMIN_EMAILS = [
   // CRITICAL: Add your Google account email here to get Admin access immediately upon login.
   // Example: "yourname@gmail.com"
   "admin@test.com", 
-  "your_email@gmail.com" 
+  "your_email@gmail.com",
+  "17monuSHARMA@gmail.com"
 ];

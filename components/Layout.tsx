@@ -10,6 +10,7 @@ import {
   User,
   Moon,
   Sun,
+  BookOpen,
   Repeat,
   Search as SearchIcon,
   Trophy,
@@ -183,9 +184,9 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
           >
             <Menu size={24} />
           </button>
-          <span className="font-bold text-xl tracking-tight text-primary-600 dark:text-primary-500">
+          <Link to="/" className="font-bold text-xl tracking-tight text-primary-600 dark:text-primary-500 hover:text-primary-700 transition-colors">
             MSquare
-          </span>
+          </Link>
         </div>
         <div className="flex items-center space-x-3">
           {/* Profile Bubble - Navigate to Account */}
@@ -317,9 +318,9 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       >
         <div className="h-full flex flex-col">
           <div className="h-16 flex items-center justify-between px-6 border-b border-gray-200 dark:border-dark-border">
-            <span className="font-extrabold text-2xl tracking-tight text-primary-600 dark:text-primary-400">
+            <Link to="/" className="font-extrabold text-2xl tracking-tight text-primary-600 dark:text-primary-400 hover:text-primary-700 transition-colors">
               MSquare
-            </span>
+            </Link>
             <button
               onClick={() => setSidebarOpen(false)}
               className="p-1 rounded-md hover:bg-gray-100 dark:hover:bg-dark-border text-slate-500"
@@ -329,7 +330,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
           </div>
 
           <div className="flex-1 overflow-y-auto py-6 px-3 space-y-2">
-            <NavItem to="/" icon={LayoutDashboard} label="Dashboard" />
+            <NavItem to="/dashboard" icon={LayoutDashboard} label="Dashboard" />
             <NavItem
               to="/revision"
               icon={Repeat}
@@ -351,7 +352,13 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                 <div className="pt-6 pb-2 px-4 text-xs font-bold text-slate-400 uppercase tracking-wider">
                   Admin
                 </div>
+                <NavItem to="/learn" icon={BookOpen} label="Learn to Code (WIP)" />
                 <NavItem to="/admin" icon={Database} label="Manage Content" />
+                <NavItem
+                  to="/admin/courses"
+                  icon={BookOpen}
+                  label="Course Builder"
+                />
                 <NavItem
                   to="/admin/sql"
                   icon={TerminalSquare}

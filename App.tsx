@@ -20,6 +20,11 @@ import SQLDashboard from './pages/SQLDashboard';
 import SQLProblemView from './pages/SQLProblemView';
 import SQLAdminDashboard from './pages/SQLAdminDashboard';
 import SQLTopicView from './pages/SQLTopicView';
+import CourseBuilder from './pages/admin/CourseBuilder';
+import CourseCatalog from './pages/CourseCatalog';
+import CourseView from './pages/CourseView';
+import LessonPlayer from './pages/LessonPlayer';
+import Home from './pages/Home';
 
 // --- Auth Context ---
 
@@ -215,11 +220,13 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           
           {/* Admin Routes */}
+          <Route path="/admin/courses" element={<RequireAuth><RequireAdmin><Layout><CourseBuilder /></Layout></RequireAdmin></RequireAuth>} />
           <Route path="/admin/users" element={<RequireAuth><RequireAdmin><Layout><UserOversight /></Layout></RequireAdmin></RequireAuth>} />
           <Route path="/admin/sql" element={<RequireAuth><RequireAdmin><Layout><SQLAdminDashboard /></Layout></RequireAdmin></RequireAuth>} />
           <Route path="/admin" element={<RequireAuth><RequireAdmin><Layout><AdminDashboard /></Layout></RequireAdmin></RequireAuth>} />
 
           {/* User Routes */}
+          <Route path="/dashboard" element={<RequireAuth><Layout><UserDashboard /></Layout></RequireAuth>} />
           <Route path="/account" element={<RequireAuth><Layout><Account /></Layout></RequireAuth>} />
           <Route path="/user/:userId" element={<RequireAuth><Layout><ProfileView /></Layout></RequireAuth>} />
           <Route path="/sheet/:sheetId" element={<RequireAuth><Layout><SheetView /></Layout></RequireAuth>} />
@@ -229,7 +236,12 @@ export default function App() {
           <Route path="/sql/problem/:slug" element={<RequireAuth><Layout><SQLProblemView /></Layout></RequireAuth>} />
           <Route path="/sql/topic/:topicId" element={<RequireAuth><Layout><SQLTopicView /></Layout></RequireAuth>} />
           <Route path="/sql" element={<RequireAuth><Layout><SQLDashboard /></Layout></RequireAuth>} />
-          <Route path="/" element={<RequireAuth><Layout><UserDashboard /></Layout></RequireAuth>} />
+          
+          <Route path="/learn" element={<RequireAuth><RequireAdmin><Layout><CourseCatalog /></Layout></RequireAdmin></RequireAuth>} />
+          <Route path="/learn/:slug" element={<RequireAuth><RequireAdmin><Layout><CourseView /></Layout></RequireAdmin></RequireAuth>} />
+          <Route path="/learn/lesson/:lessonId" element={<RequireAuth><RequireAdmin><Layout><LessonPlayer /></Layout></RequireAdmin></RequireAuth>} />
+          
+          <Route path="/" element={<Home />} />
         </Routes>
       </Router>
     </AuthProvider>

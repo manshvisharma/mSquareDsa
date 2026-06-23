@@ -5,7 +5,7 @@ import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, addDoc, g
 import { COLLECTIONS } from '../constants';
 import { DirectMessage, UserProfile } from '../types';
 import { MessageCircle, Trash2, Send, ArrowLeft, Smile, Plus } from 'lucide-react';
-import EmojiPicker, { Theme } from 'emoji-picker-react';
+import EmojiPicker, { Theme, Emoji, EmojiStyle } from 'emoji-picker-react';
 import { Link, useSearchParams } from 'react-router-dom';
 
 export const Inbox = () => {
@@ -24,21 +24,28 @@ export const Inbox = () => {
     const [reactionPickerMsgId, setReactionPickerMsgId] = useState<string | null>(null);
     const bottomRef = useRef<HTMLDivElement>(null);
 
-    const defaultReactions = ['❤️', '👍', '😂', '😮', '🥺', '🙏'];
-    const [recentReactions, setRecentReactions] = useState<string[]>(defaultReactions);
+    const defaultReactions = [
+        { emoji: '❤️', unified: '2764-fe0f' },
+        { emoji: '👍', unified: '1f44d' },
+        { emoji: '😂', unified: '1f602' },
+        { emoji: '😮', unified: '1f62e' },
+        { emoji: '🥺', unified: '1f97a' },
+        { emoji: '🙏', unified: '1f64f' }
+    ];
+    const [recentReactions, setRecentReactions] = useState<{emoji: string, unified: string}[]>(defaultReactions);
 
     useEffect(() => {
         try {
-            const stored = localStorage.getItem('recentReactions');
+            const stored = localStorage.getItem('recentReactionsV2');
             if (stored) setRecentReactions(JSON.parse(stored));
         } catch (e) {}
     }, []);
 
-    const handleReactionSelect = (msgId: string, emoji: string) => {
-        const newRecent = [emoji, ...recentReactions.filter(e => e !== emoji)].slice(0, 6);
+    const handleReactionSelect = (msgId: string, emojiObj: {emoji: string, unified: string}) => {
+        const newRecent = [emojiObj, ...recentReactions.filter(e => e.unified !== emojiObj.unified)].slice(0, 6);
         setRecentReactions(newRecent);
-        localStorage.setItem('recentReactions', JSON.stringify(newRecent));
-        toggleReaction(msgId, emoji);
+        localStorage.setItem('recentReactionsV2', JSON.stringify(newRecent));
+        toggleReaction(msgId, emojiObj.unified);
     };
 
 
@@ -244,7 +251,7 @@ export const Inbox = () => {
         } catch (e) { console.error(e); }
     };
 
-    const toggleReaction = async (msgId: string, emoji: string) => {
+    const toggleReaction = async (msgId: string, emojiOrUnified: string) => {
         if (!user) return;
         const msgRef = doc(db, COLLECTIONS.MESSAGES, msgId);
         const msg = messages.find(m => m.id === msgId);
@@ -253,15 +260,12 @@ export const Inbox = () => {
         const currentReactions = msg.reactions || {};
         const newReactions = { ...currentReactions };
         
-        // Find if *anyone* has this emoji. If so, remove all users who have this emoji.
-        const usersWithEmoji = Object.keys(newReactions).filter(uid => newReactions[uid] === emoji);
-        
-        if (usersWithEmoji.length > 0) {
-            // Remove it
-            usersWithEmoji.forEach(uid => delete newReactions[uid]);
+        if (newReactions[user.uid] === emojiOrUnified) {
+            // Remove own reaction if clicking the same one again
+            delete newReactions[user.uid];
         } else {
-            // Add it for the current user
-            newReactions[user.uid] = emoji;
+            // Add or swap to new reaction for current user
+            newReactions[user.uid] = emojiOrUnified;
         }
 
         try {
@@ -427,9 +431,15 @@ export const Inbox = () => {
                                                         </div>
                                                         
                                                         {msg.reactions && Object.keys(msg.reactions).length > 0 && (
-                                                            <div className={`absolute -bottom-3 ${isMe ? 'right-2' : 'left-2'} flex gap-0.5 bg-white dark:bg-dark-card border border-gray-100 dark:border-dark-border rounded-full px-1.5 py-0.5 shadow-sm text-[12px] select-none z-10`}>
-                                                                {Array.from(new Set(Object.values(msg.reactions))).map((emoji, idx) => (
-                                                                    <button key={idx} onClick={() => toggleReaction(msg.id, emoji as string)} className="cursor-pointer hover:scale-110 transition-transform" title="Remove Reaction" style={{fontFamily: '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif'}}>{emoji as string}</button>
+                                                            <div className={`absolute -bottom-3 ${isMe ? 'right-2' : 'left-2'} flex gap-0.5 bg-white dark:bg-dark-card border border-gray-100 dark:border-dark-border rounded-full px-1.5 py-0.5 shadow-sm text-[12px] select-none z-10 items-center`}>
+                                                                {Array.from(new Set(Object.values(msg.reactions))).map((emojiVal, idx) => (
+                                                                    <button key={idx} onClick={() => toggleReaction(msg.id, emojiVal as string)} className="cursor-pointer hover:scale-110 transition-transform flex items-center justify-center p-0.5" title="Toggle Reaction">
+                                                                        {/^[0-9a-fA-F-]+$/.test(emojiVal as string) ? (
+                                                                            <Emoji unified={emojiVal as string} size={14} emojiStyle={EmojiStyle.APPLE} />
+                                                                        ) : (
+                                                                            <span style={{fontFamily: '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif'}}>{emojiVal as string}</span>
+                                                                        )}
+                                                                    </button>
                                                                 ))}
                                                                 {Object.keys(msg.reactions).length > 1 && (
                                                                     <span className="text-[10px] font-bold text-gray-500 ml-0.5 bg-gray-100 dark:bg-dark-surface rounded-full w-4 h-4 flex items-center justify-center">{Object.keys(msg.reactions).length}</span>
@@ -443,10 +453,10 @@ export const Inbox = () => {
                                                          <div className="flex bg-white dark:bg-dark-card border border-gray-200 dark:border-dark-border rounded-full shadow-sm px-1.5 py-1 gap-0.5 z-20">
                                                              {recentReactions.slice(0, 4).map(em => (
                                                                  <button
-                                                                    key={em}
+                                                                    key={em.unified}
                                                                     onClick={() => handleReactionSelect(msg.id, em)}
-                                                                    className={`text-[14px] hover:scale-125 hover:-translate-y-1 transition-transform p-1 rounded-full ${msg.reactions?.[user?.uid || ''] === em ? 'bg-primary-50 dark:bg-primary-900/40 ring-1 ring-primary-200' : ''}`}
-                                                                 >{em}</button>
+                                                                    className={`hover:scale-125 hover:-translate-y-1 transition-transform p-1.5 flex items-center justify-center rounded-full ${msg.reactions?.[user?.uid || ''] === em.unified ? 'bg-primary-50 dark:bg-primary-900/40 ring-1 ring-primary-200' : ''}`}
+                                                                 ><Emoji unified={em.unified} size={16} emojiStyle={EmojiStyle.APPLE} /></button>
                                                              ))}
                                                              <button 
                                                                  onClick={() => setReactionPickerMsgId(msg.id)} 
@@ -466,8 +476,11 @@ export const Inbox = () => {
                                                                  <div className="relative z-50 shadow-2xl rounded-xl overflow-hidden border border-gray-200 dark:border-dark-border">
                                                                      <EmojiPicker 
                                                                          theme={Theme.AUTO}
+                                                                         emojiStyle={EmojiStyle.APPLE}
+                                                                         width={320}
+                                                                         height={400}
                                                                          onEmojiClick={(emojiData) => {
-                                                                             handleReactionSelect(msg.id, emojiData.emoji);
+                                                                             handleReactionSelect(msg.id, { emoji: emojiData.emoji, unified: emojiData.unified });
                                                                              setReactionPickerMsgId(null);
                                                                          }}
                                                                      />
@@ -521,6 +534,9 @@ export const Inbox = () => {
                                         <div className="relative z-50 shadow-2xl rounded-xl overflow-hidden border border-gray-200 dark:border-dark-border">
                                             <EmojiPicker 
                                                 theme={Theme.AUTO}
+                                                emojiStyle={EmojiStyle.APPLE}
+                                                width={320}
+                                                height={400}
                                                 onEmojiClick={(emojiData) => {
                                                     setReplyText(prev => prev + emojiData.emoji);
                                                 }}

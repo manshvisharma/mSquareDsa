@@ -37,6 +37,7 @@ export interface UserProfile {
   createdAt: number;
   lastActive: number;
   completedProblems: Record<string, number>; // problemId -> timestamp
+  completedLessons?: Record<string, number>; // lessonId -> timestamp
   revisions?: Record<string, RevisionData>; // problemId -> RevisionData
   bookmarks?: Record<string, boolean>; // problemId -> true
   streakStart: number;
@@ -130,6 +131,62 @@ export interface SQLTopicBatch {
   name: string;
   startRange: number;
   endRange: number;
+}
+
+export interface Course {
+  id: string;
+  title: string;
+  slug: string;
+  description: string;
+  thumbnail: string;
+  order: number;
+}
+
+export interface LearningTopic {
+  id: string;
+  course_id: string;
+  title: string;
+  description: string;
+  order: number;
+  xp: number;
+  estimated_time: number;
+}
+
+export type LessonType = 'learn' | 'practice' | 'project' | 'quiz' | 'assessment';
+
+export interface Lesson {
+  id: string;
+  topic_id: string;
+  title: string;
+  type: LessonType;
+  order: number;
+}
+
+export type SlideType = 'theory' | 'quiz' | 'code' | 'fill_blank' | 'project';
+
+export interface SlideConfig {
+  editor?: boolean;
+  language?: string;
+  starterCode?: string;
+  solution?: string;
+  hint?: string;
+  showPreview?: boolean;
+  allowAutocomplete?: boolean;
+  allowPaste?: boolean;
+  options?: string[];
+  correctAnswer?: string;
+  validationRules?: any[];
+  validationRegex?: string;
+}
+
+export interface Slide {
+  id: string;
+  lesson_id: string;
+  order: number;
+  type: SlideType;
+  title: string;
+  content: string; // Markdown or plain text
+  configuration_json: SlideConfig;
 }
 
 export interface SQLProblem {

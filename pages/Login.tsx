@@ -12,8 +12,9 @@ export default function Login() {
   const navigate = useNavigate();
 
   const handleRedirect = () => {
-    // Check local storage for last visited path, default to home
-    const lastPath = localStorage.getItem('sheetPrep_lastPath') || '/';
+    // Check local storage for last visited path, default to dashboard
+    let lastPath = localStorage.getItem('sheetPrep_lastPath') || '/dashboard';
+    if (lastPath === '/') lastPath = '/dashboard';
     navigate(lastPath);
   };
 
